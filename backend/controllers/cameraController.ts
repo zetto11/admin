@@ -5,7 +5,9 @@ import { Server } from "socket.io";
 
 export const getCameras = async (req: AuthRequest, res: Response) => {
   try {
-    const [rows] = await db.execute("SELECT * FROM cameras");
+    const [rows] = await db.execute(
+      "SELECT id, name, zone, ip_simulated, status, is_blocked, last_seen FROM cameras"
+    );
     res.json(rows);
   } catch (err: any) {
     res.status(500).json({ error: err.message });

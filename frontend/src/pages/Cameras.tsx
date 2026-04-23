@@ -22,30 +22,24 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
-// Camera Feed Simulation Component
-const CameraFeed = ({ camera, onClose }: { camera: Camera, onClose: () => void }) => {
+// Camera Feed Component
+const CameraFeed = ({
+  camera,
+  onClose,
+  streamFailed,
+  onStreamError,
+}: {
+  camera: Camera,
+  onClose: () => void,
+  streamFailed: boolean,
+  onStreamError: () => void
+}) => {
   const [timestamp, setTimestamp] = useState(new Date().toLocaleTimeString());
-  const [noise, setNoise] = useState(false);
-  const [imgUrl, setImgUrl] = useState(`https://images.unsplash.com/photo-${camera.id === 1 ? '1541888946425-d81bb19240f5' : camera.id === 2 ? '1517404215738-15263e9f9178' : '1506744038136-46273834b3fb'}?auto=format&fit=crop&w=1200&q=80`);
 
   useEffect(() => {
     const timer = setInterval(() => setTimestamp(new Date().toLocaleTimeString()), 1000);
-    const noiseTimer = setInterval(() => {
-      if (Math.random() > 0.9) {
-        setNoise(true);
-        setTimeout(() => setNoise(false), 200);
-      }
-    }, 2000);
-    
-    // Simulate image refresh by adding random param
-    const refreshTimer = setInterval(() => {
-        setImgUrl(prev => `${prev.split('&sig=')[0]}&sig=${Math.random()}`);
-    }, 15000);
-
     return () => {
        clearInterval(timer);
-       clearInterval(noiseTimer);
-       clearInterval(refreshTimer);
     };
   }, []);
 
@@ -105,15 +99,19 @@ const CameraFeed = ({ camera, onClose }: { camera: Camera, onClose: () => void }
               <h2 className="text-xl font-black text-slate-600 mb-2 uppercase tracking-[0.3em]">Signal Timeout</h2>
               <p className="text-slate-700 text-[10px] font-mono tracking-widest">REMOTE PORT {camera.ip_simulated}: ERROR_HEARTBEAT_FAIL</p>
             </div>
+          ) : streamFailed ? (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-brand-bg text-center z-20">
+              <WifiOff size={60} className="text-slate-700 mb-6" />
+              <h2 className="text-xl font-black text-slate-500 mb-2 uppercase tracking-[0.3em]">No Signal</h2>
+              <p className="text-slate-600 text-[10px] font-mono tracking-widest">Camera offline or unreachable</p>
+            </div>
           ) : (
             <>
-               <motion.img 
-                 key={imgUrl}
-                 initial={{ opacity: 0 }}
-                 animate={{ opacity: 1 }}
-                 src={imgUrl} 
-                 className={`w-full h-full object-cover transition-all duration-700 ${noise ? 'opacity-50 blur-[2px] grayscale' : 'opacity-100'}`}
-                 alt="Tactical Feed"
+               <img
+                 src={camera.ip_simulated}
+                 className="w-full h-full object-cover"
+                 alt={camera.name}
+                 onError={onStreamError}
                />
                <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_50%_50%,transparent_50%,rgba(0,0,0,0.4)_100%)]" />
                <div className="absolute inset-0 pointer-events-none mix-blend-overlay opacity-20 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] bg-repeat" />
@@ -151,8 +149,9 @@ const CameraFeed = ({ camera, onClose }: { camera: Camera, onClose: () => void }
 
           <div className="absolute top-6 left-6 p-3 glass-card bg-black/40 border-white/10 backdrop-blur-md">
              <div className="flex items-center gap-3">
-                <Radio size={14} className="text-rose-500 animate-pulse" />
-                <span className="text-[10px] font-mono font-black text-white tracking-[0.2em] uppercase">Tactical.View_{camera.id}</span>
+                <div className={`w-2.5 h-2.5 rounded-full ${camera.status === 'online' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                <span className="text-[10px] font-mono font-black text-white tracking-[0.2em] uppercase">{camera.name} • {camera.zone}</span>
+                {camera.status === 'online' && <span className="px-2 py-0.5 rounded bg-rose-500 text-white text-[8px] font-black tracking-widest">LIVE</span>}
              </div>
           </div>
         </div>
@@ -219,6 +218,12 @@ interface CameraCardProps {
 }
 
 function CameraCard({ camera, onClick, onBlock, isAdmin }: CameraCardProps) {
+  const [streamFailed, setStreamFailed] = useState(false);
+
+  useEffect(() => {
+    setStreamFailed(false);
+  }, [camera.ip_simulated, camera.status, camera.is_blocked]);
+
   return (
     <motion.div
         whileHover={{ y: -4 }}
@@ -226,7 +231,7 @@ function CameraCard({ camera, onClick, onBlock, isAdmin }: CameraCardProps) {
     >
         {/* Status Badge */}
         <div className="absolute top-4 left-4 z-10 flex items-center gap-2 px-2.5 py-1 rounded-lg bg-black/60 backdrop-blur-md border border-white/10">
-            <div className={`status-pulse ${camera.status === 'online' ? 'status-pulse-online' : 'status-pulse-offline'}`} />
+            <div className={`w-2 h-2 rounded-full ${camera.status === 'online' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
             <span className="text-[9px] font-black text-white uppercase tracking-[0.2em]">{camera.status}</span>
         </div>
 
@@ -237,12 +242,13 @@ function CameraCard({ camera, onClick, onBlock, isAdmin }: CameraCardProps) {
 
         {/* Media Preview */}
         <div className="aspect-[16/10] bg-[#050507] relative cursor-pointer overflow-hidden border-b border-white/5" onClick={onClick}>
-            {camera.status === 'online' && !camera.is_blocked ? (
+            {camera.status === 'online' && !camera.is_blocked && !streamFailed ? (
                 <>
                 <img 
-                    src={`https://images.unsplash.com/photo-${camera.id === 1 ? '1541888946425-d81bb19240f5' : camera.id === 2 ? '1517404215738-15263e9f9178' : '1506744038136-46273834b3fb'}?auto=format&fit=crop&w=600&q=50`} 
+                    src={camera.ip_simulated}
                     className="w-full h-full object-cover transition-all duration-1000 opacity-60 group-hover:opacity-100 group-hover:scale-110"
-                    alt="Tactical Preview"
+                    alt={camera.name}
+                    onError={() => setStreamFailed(true)}
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-all duration-500">
                     <div className="absolute bottom-4 left-4">
@@ -252,22 +258,33 @@ function CameraCard({ camera, onClick, onBlock, isAdmin }: CameraCardProps) {
                         </div>
                     </div>
                 </div>
+                <div className="absolute top-4 right-4 px-2 py-1 rounded bg-rose-500 text-white text-[9px] font-black tracking-widest">
+                  LIVE
+                </div>
                 </>
             ) : (
                 <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
                     {camera.is_blocked ? (
                         <>
                         <Lock size={32} className="text-rose-500 mb-3 opacity-50" />
-                        <span className="text-[10px] font-black text-rose-500 uppercase tracking-widest">Restricted Pattern</span>
+                        <span className="text-[10px] font-black text-rose-500 uppercase tracking-widest">Blocked</span>
+                        </>
+                    ) : camera.status === 'offline' ? (
+                        <>
+                        <WifiOff size={32} className="text-slate-800 mb-3" />
+                        <span className="text-[10px] font-black text-slate-800 uppercase tracking-widest">No Signal</span>
                         </>
                     ) : (
                         <>
                         <WifiOff size={32} className="text-slate-800 mb-3" />
-                        <span className="text-[10px] font-black text-slate-800 uppercase tracking-widest">Link Interrupted</span>
+                        <span className="text-[10px] font-black text-slate-800 uppercase tracking-widest">Camera offline or unreachable</span>
                         </>
                     )}
                 </div>
             )}
+            <div className="absolute left-4 bottom-4 px-2.5 py-1 rounded bg-black/60 border border-white/10 text-[10px] text-white font-semibold">
+              {camera.name} • {camera.zone}
+            </div>
         </div>
 
         {/* Content */}
@@ -340,6 +357,7 @@ export default function Cameras() {
   const [zoneFilter, setZoneFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
   const [selectedCamera, setSelectedCamera] = useState<Camera | null>(null);
+  const [streamErrors, setStreamErrors] = useState<Record<number, boolean>>({});
 
   useEffect(() => {
     fetchCameras();
@@ -507,7 +525,9 @@ export default function Cameras() {
         {selectedCamera && (
           <CameraFeed 
             camera={(cameras.find(c => c.id === selectedCamera.id) || selectedCamera)} 
-            onClose={() => setSelectedCamera(null)} 
+            onClose={() => setSelectedCamera(null)}
+            streamFailed={!!streamErrors[selectedCamera.id]}
+            onStreamError={() => setStreamErrors(prev => ({ ...prev, [selectedCamera.id]: true }))}
           />
         )}
       </AnimatePresence>
