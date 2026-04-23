@@ -161,10 +161,10 @@ const CameraFeed = ({
               <h4 className="text-[10px] font-black text-slate-600 uppercase tracking-[0.3em] mb-4">Node Telemetry</h4>
               <div className="grid grid-cols-2 gap-4">
                  {[
-                   { label: 'Signal', val: '98%', color: 'text-emerald-500' },
-                   { label: 'Uptime', val: '942h', color: 'text-blue-400' },
-                   { label: 'Thermal', val: '42°C', color: 'text-amber-500' },
-                   { label: 'Load', val: '12%', color: 'text-slate-400' }
+                   { label: 'Signal', val: camera.signal_percent != null ? `${camera.signal_percent}%` : 'N/A', color: 'text-emerald-500' },
+                   { label: 'Uptime', val: camera.uptime_hours != null ? `${camera.uptime_hours}h` : 'N/A', color: 'text-blue-400' },
+                   { label: 'Thermal', val: camera.thermal_celsius != null ? `${Number(camera.thermal_celsius).toFixed(1)}°C` : 'N/A', color: 'text-amber-500' },
+                   { label: 'Load', val: camera.load_percent != null ? `${camera.load_percent}%` : 'N/A', color: 'text-slate-400' }
                  ].map(i => (
                    <div key={i.label} className="p-3 rounded-xl bg-white/[0.02] border border-white/5">
                       <p className="text-[8px] font-bold text-slate-600 uppercase tracking-widest mb-1">{i.label}</p>
@@ -181,12 +181,22 @@ const CameraFeed = ({
                        <Clock size={14} className="text-blue-500" />
                        <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">Retain Cycle</span>
                     </div>
-                    <span className="text-[9px] font-mono text-slate-500 uppercase">30 Days Remaining</span>
+                    <span className="text-[9px] font-mono text-slate-500 uppercase">
+                      {camera.retain_days_remaining != null ? `${camera.retain_days_remaining} Days Remaining` : 'N/A'}
+                    </span>
                  </div>
                  <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
-                    <motion.div initial={{ width: 0 }} animate={{ width: '75%' }} className="h-full bg-blue-500 shadow-[0_0_8px_#3b82f6]" />
+                    <motion.div
+                      initial={{ width: 0 }}
+                      animate={{ width: `${Math.max(0, Math.min(100, camera.retain_days_remaining != null ? (camera.retain_days_remaining / 30) * 100 : 0))}%` }}
+                      className="h-full bg-blue-500 shadow-[0_0_8px_#3b82f6]"
+                    />
                  </div>
-                 <p className="text-[9px] text-slate-600 font-medium leading-relaxed">Storage cluster node Sigma-4 identifying 4.2TB of proprietary vector data for this node.</p>
+                 <p className="text-[9px] text-slate-600 font-medium leading-relaxed">
+                   {camera.storage_node_label && camera.storage_used_tb != null
+                     ? `Storage cluster node ${camera.storage_node_label} identifying ${Number(camera.storage_used_tb).toFixed(2)}TB of proprietary vector data for this node.`
+                     : 'No storage telemetry available for this node yet.'}
+                 </p>
               </div>
            </div>
            <div className="space-y-4">

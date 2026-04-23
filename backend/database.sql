@@ -39,6 +39,20 @@ CREATE TABLE `access_logs` (
   INDEX `idx_access_camera_id` (`camera_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- 3.1 CAMERA TELEMETRY TABLE (PER-CAMERA LIVE METRICS)
+CREATE TABLE `camera_telemetry` (
+  `camera_id` INT PRIMARY KEY,
+  `signal_percent` TINYINT UNSIGNED DEFAULT NULL,
+  `uptime_hours` INT UNSIGNED DEFAULT NULL,
+  `thermal_celsius` DECIMAL(5,2) DEFAULT NULL,
+  `load_percent` TINYINT UNSIGNED DEFAULT NULL,
+  `retain_days_remaining` INT UNSIGNED DEFAULT NULL,
+  `storage_used_tb` DECIMAL(6,2) DEFAULT NULL,
+  `storage_node_label` VARCHAR(50) DEFAULT NULL,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT `fk_telemetry_camera` FOREIGN KEY (`camera_id`) REFERENCES `cameras` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- 4. ALERTS TABLE (SECURITY EVENTS)
 CREATE TABLE `alerts` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
@@ -96,6 +110,19 @@ INSERT INTO `cameras` (`name`, `zone`, `ip_simulated`, `status`, `is_blocked`) V
 ('Cam_Warehouse_Aisle4', 'Warehouse', '192.168.3.11', 'online', FALSE),
 ('Cam_Office_Reception', 'Office', '192.168.4.20', 'online', FALSE),
 ('Cam_Office_ServerRoom', 'Office', '192.168.4.21', 'online', TRUE);
+
+-- Camera Telemetry (Real Per-Camera Metrics)
+INSERT INTO `camera_telemetry`
+(`camera_id`, `signal_percent`, `uptime_hours`, `thermal_celsius`, `load_percent`, `retain_days_remaining`, `storage_used_tb`, `storage_node_label`)
+VALUES
+(1, 98, 942, 42.00, 12, 30, 4.20, 'Sigma-4'),
+(2, 95, 877, 43.10, 18, 28, 3.84, 'Sigma-4'),
+(3, 91, 1264, 49.40, 34, 26, 6.13, 'Sigma-7'),
+(4, 0, 0, NULL, 0, 22, 2.78, 'Sigma-7'),
+(5, 96, 733, 40.60, 21, 31, 5.01, 'Sigma-2'),
+(6, 93, 801, 41.20, 24, 29, 4.66, 'Sigma-2'),
+(7, 99, 1102, 38.40, 9, 34, 2.49, 'Sigma-1'),
+(8, 88, 690, 44.00, 27, 20, 7.04, 'Sigma-9');
 
 -- Test Alerts
 INSERT INTO `alerts` (`type`, `severity`, `description`, `camera_id`, `timestamp`) VALUES

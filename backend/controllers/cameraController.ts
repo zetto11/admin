@@ -6,7 +6,25 @@ import { Server } from "socket.io";
 export const getCameras = async (req: AuthRequest, res: Response) => {
   try {
     const [rows] = await db.execute(
-      "SELECT id, name, zone, ip_simulated, status, is_blocked, last_seen FROM cameras"
+      `SELECT 
+        c.id,
+        c.name,
+        c.zone,
+        c.ip_simulated,
+        c.status,
+        c.is_blocked,
+        c.last_seen,
+        ct.signal_percent,
+        ct.uptime_hours,
+        ct.thermal_celsius,
+        ct.load_percent,
+        ct.retain_days_remaining,
+        ct.storage_used_tb,
+        ct.storage_node_label,
+        ct.updated_at AS telemetry_updated_at
+      FROM cameras c
+      LEFT JOIN camera_telemetry ct ON ct.camera_id = c.id
+      ORDER BY c.id DESC`
     );
     res.json(rows);
   } catch (err: any) {
