@@ -28,14 +28,17 @@ const CameraFeed = ({
   onClose,
   streamFailed,
   onStreamError,
+  onStreamLoad,
 }: {
   camera: Camera,
   onClose: () => void,
   streamFailed: boolean,
-  onStreamError: () => void
+  onStreamError: () => void,
+  onStreamLoad: () => void
 }) => {
   const [timestamp, setTimestamp] = useState(new Date().toLocaleTimeString());
   const canRenderStream = !!camera.ip_simulated && !camera.is_blocked && !streamFailed;
+  const resolvedStatus = canRenderStream ? 'online' : camera.status;
 
   useEffect(() => {
     const timer = setInterval(() => setTimestamp(new Date().toLocaleTimeString()), 1000);
@@ -63,7 +66,7 @@ const CameraFeed = ({
         {/* Top Header */}
         <div className="p-4 flex justify-between items-center bg-white/[0.03] border-b border-white/5 relative z-10">
           <div className="flex items-center gap-4">
-            <div className={`status-pulse ${camera.status === 'online' ? 'status-pulse-online' : 'status-pulse-offline'}`}></div>
+            <div className={`status-pulse ${resolvedStatus === 'online' ? 'status-pulse-online' : 'status-pulse-offline'}`}></div>
             <div>
               <h3 className="text-sm font-bold text-white uppercase tracking-tight leading-none">{camera.name}</h3>
               <p className="text-[10px] text-slate-500 font-mono mt-1.5 uppercase tracking-widest">Global Node Identifier: 0x{camera.id.toString(16).toUpperCase()}</p>
@@ -107,6 +110,7 @@ const CameraFeed = ({
                  className="w-full h-full object-cover"
                  alt={camera.name}
                  onError={onStreamError}
+                 onLoad={onStreamLoad}
                />
                <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_50%_50%,transparent_50%,rgba(0,0,0,0.4)_100%)]" />
                <div className="absolute inset-0 pointer-events-none mix-blend-overlay opacity-20 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] bg-repeat" />
@@ -144,9 +148,9 @@ const CameraFeed = ({
 
           <div className="absolute top-6 left-6 p-3 glass-card bg-black/40 border-white/10 backdrop-blur-md">
              <div className="flex items-center gap-3">
-                <div className={`w-2.5 h-2.5 rounded-full ${camera.status === 'online' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                <div className={`w-2.5 h-2.5 rounded-full ${resolvedStatus === 'online' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
                 <span className="text-[10px] font-mono font-black text-white tracking-[0.2em] uppercase">{camera.name} • {camera.zone}</span>
-                {camera.status === 'online' && <span className="px-2 py-0.5 rounded bg-rose-500 text-white text-[8px] font-black tracking-widest">LIVE</span>}
+                {resolvedStatus === 'online' && <span className="px-2 py-0.5 rounded bg-rose-500 text-white text-[8px] font-black tracking-widest">LIVE</span>}
              </div>
           </div>
         </div>
@@ -214,10 +218,13 @@ interface CameraCardProps {
 
 function CameraCard({ camera, onClick, onBlock, isAdmin }: CameraCardProps) {
   const [streamFailed, setStreamFailed] = useState(false);
+  const [streamLive, setStreamLive] = useState(camera.status === 'online');
   const canRenderStream = !!camera.ip_simulated && !camera.is_blocked && !streamFailed;
+  const resolvedStatus = streamLive && !camera.is_blocked ? 'online' : camera.status;
 
   useEffect(() => {
     setStreamFailed(false);
+    setStreamLive(camera.status === 'online');
   }, [camera.ip_simulated, camera.status, camera.is_blocked]);
 
   return (
@@ -227,8 +234,8 @@ function CameraCard({ camera, onClick, onBlock, isAdmin }: CameraCardProps) {
     >
         {/* Status Badge */}
         <div className="absolute top-4 left-4 z-10 flex items-center gap-2 px-2.5 py-1 rounded-lg bg-black/60 backdrop-blur-md border border-white/10">
-            <div className={`w-2 h-2 rounded-full ${camera.status === 'online' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
-            <span className="text-[9px] font-black text-white uppercase tracking-[0.2em]">{camera.status}</span>
+            <div className={`w-2 h-2 rounded-full ${resolvedStatus === 'online' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+            <span className="text-[9px] font-black text-white uppercase tracking-[0.2em]">{resolvedStatus}</span>
         </div>
 
         {/* Zone Badge */}
@@ -244,7 +251,14 @@ function CameraCard({ camera, onClick, onBlock, isAdmin }: CameraCardProps) {
                     src={camera.ip_simulated}
                     className="w-full h-full object-cover transition-all duration-1000 opacity-60 group-hover:opacity-100 group-hover:scale-110"
                     alt={camera.name}
-                    onError={() => setStreamFailed(true)}
+                    onError={() => {
+                      setStreamFailed(true);
+                      setStreamLive(false);
+                    }}
+                    onLoad={() => {
+                      setStreamFailed(false);
+                      setStreamLive(true);
+                    }}
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-all duration-500">
                     <div className="absolute bottom-4 left-4">
@@ -519,6 +533,7 @@ export default function Cameras() {
             onClose={() => setSelectedCamera(null)}
             streamFailed={!!streamErrors[selectedCamera.id]}
             onStreamError={() => setStreamErrors(prev => ({ ...prev, [selectedCamera.id]: true }))}
+            onStreamLoad={() => setStreamErrors(prev => ({ ...prev, [selectedCamera.id]: false }))}
           />
         )}
       </AnimatePresence>
