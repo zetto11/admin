@@ -35,6 +35,7 @@ const CameraFeed = ({
   onStreamError: () => void
 }) => {
   const [timestamp, setTimestamp] = useState(new Date().toLocaleTimeString());
+  const canRenderStream = !!camera.ip_simulated && !camera.is_blocked && !streamFailed;
 
   useEffect(() => {
     const timer = setInterval(() => setTimestamp(new Date().toLocaleTimeString()), 1000);
@@ -93,13 +94,7 @@ const CameraFeed = ({
                  <button onClick={onClose} className="btn-action">Return to Hub</button>
               </div>
             </div>
-          ) : camera.status === 'offline' ? (
-            <div className="absolute inset-0 flex flex-col items-center justify-center bg-brand-bg text-center z-20">
-              <ShieldAlert size={60} className="text-slate-800 mb-6 animate-pulse" />
-              <h2 className="text-xl font-black text-slate-600 mb-2 uppercase tracking-[0.3em]">Signal Timeout</h2>
-              <p className="text-slate-700 text-[10px] font-mono tracking-widest">REMOTE PORT {camera.ip_simulated}: ERROR_HEARTBEAT_FAIL</p>
-            </div>
-          ) : streamFailed ? (
+          ) : !canRenderStream ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-brand-bg text-center z-20">
               <WifiOff size={60} className="text-slate-700 mb-6" />
               <h2 className="text-xl font-black text-slate-500 mb-2 uppercase tracking-[0.3em]">No Signal</h2>
@@ -139,7 +134,7 @@ const CameraFeed = ({
           </div>
           
           {/* Overlay scanning line */}
-          {camera.status === 'online' && !camera.is_blocked && (
+          {canRenderStream && (
             <motion.div 
                animate={{ top: ['0%', '100%'] }}
                transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
@@ -219,6 +214,7 @@ interface CameraCardProps {
 
 function CameraCard({ camera, onClick, onBlock, isAdmin }: CameraCardProps) {
   const [streamFailed, setStreamFailed] = useState(false);
+  const canRenderStream = !!camera.ip_simulated && !camera.is_blocked && !streamFailed;
 
   useEffect(() => {
     setStreamFailed(false);
@@ -242,7 +238,7 @@ function CameraCard({ camera, onClick, onBlock, isAdmin }: CameraCardProps) {
 
         {/* Media Preview */}
         <div className="aspect-[16/10] bg-[#050507] relative cursor-pointer overflow-hidden border-b border-white/5" onClick={onClick}>
-            {camera.status === 'online' && !camera.is_blocked && !streamFailed ? (
+            {canRenderStream ? (
                 <>
                 <img 
                     src={camera.ip_simulated}
@@ -268,11 +264,6 @@ function CameraCard({ camera, onClick, onBlock, isAdmin }: CameraCardProps) {
                         <>
                         <Lock size={32} className="text-rose-500 mb-3 opacity-50" />
                         <span className="text-[10px] font-black text-rose-500 uppercase tracking-widest">Blocked</span>
-                        </>
-                    ) : camera.status === 'offline' ? (
-                        <>
-                        <WifiOff size={32} className="text-slate-800 mb-3" />
-                        <span className="text-[10px] font-black text-slate-800 uppercase tracking-widest">No Signal</span>
                         </>
                     ) : (
                         <>
