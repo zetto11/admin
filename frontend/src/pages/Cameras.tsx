@@ -36,9 +36,14 @@ const CameraFeed = ({
   onStreamError: () => void,
   onStreamLoad: () => void
 }) => {
+  const { token } = useAuth();
   const [timestamp, setTimestamp] = useState(new Date().toLocaleTimeString());
   const canRenderStream = !!camera.ip_simulated && !camera.is_blocked && !streamFailed;
   const resolvedStatus = canRenderStream ? 'online' : camera.status;
+  const [isCapturing, setIsCapturing] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [captureMessage, setCaptureMessage] = useState<string | null>(null);
+  const [analysisMessage, setAnalysisMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const timer = setInterval(() => setTimestamp(new Date().toLocaleTimeString()), 1000);
@@ -46,6 +51,42 @@ const CameraFeed = ({
        clearInterval(timer);
     };
   }, []);
+
+  const handleCaptureFrame = async () => {
+    try {
+      setIsCapturing(true);
+      setCaptureMessage(null);
+      const res = await fetch(`/api/cameras/${camera.id}/capture`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Failed to capture frame');
+      setCaptureMessage(`Saved to cam_screens/${data.file_name}`);
+    } catch (err: any) {
+      setCaptureMessage(err.message || 'Failed to capture frame');
+    } finally {
+      setIsCapturing(false);
+    }
+  };
+
+  const handleVectorAnalysis = async () => {
+    try {
+      setIsAnalyzing(true);
+      setAnalysisMessage(null);
+      const res = await fetch(`/api/cameras/${camera.id}/vector-analysis`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Vector analysis failed');
+      setAnalysisMessage(`${String(data.severity).toUpperCase()} • Risk ${data.risk_score}: ${data.summary}`);
+    } catch (err: any) {
+      setAnalysisMessage(err.message || 'Vector analysis failed');
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
@@ -123,10 +164,28 @@ const CameraFeed = ({
                       METRIC: 12.4 Mbps / 32ms LATENCY
                     </div>
                     <div className="flex gap-3">
-                        <button className="btn-action bg-white/5 border-white/10 hover:bg-white/10 text-white">Capture Frame</button>
-                        <button className="btn-action bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-600/20">Vector Analysis</button>
+                        <button
+                          onClick={handleCaptureFrame}
+                          disabled={isCapturing}
+                          className="btn-action bg-white/5 border-white/10 hover:bg-white/10 text-white disabled:opacity-50"
+                        >
+                          {isCapturing ? 'Capturing...' : 'Capture Frame'}
+                        </button>
+                        <button
+                          onClick={handleVectorAnalysis}
+                          disabled={isAnalyzing}
+                          className="btn-action bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-600/20 disabled:opacity-50"
+                        >
+                          {isAnalyzing ? 'Analyzing...' : 'Vector Analysis'}
+                        </button>
                     </div>
                 </div>
+                {(captureMessage || analysisMessage) && (
+                  <div className="mt-4 space-y-1">
+                    {captureMessage && <p className="text-[10px] text-emerald-400 font-mono">{captureMessage}</p>}
+                    {analysisMessage && <p className="text-[10px] text-blue-300 font-mono">{analysisMessage}</p>}
+                  </div>
+                )}
               </div>
             </>
           )}

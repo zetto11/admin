@@ -3,6 +3,7 @@ import { createServer } from "http";
 import { Server } from "../frontend/node_modules/socket.io/dist/index.js";
 import cors from "cors";
 import dotenv from "dotenv";
+import path from "path";
 
 import { connectToDatabase, db } from "./config/db";
 import { authenticateToken, isAdmin } from "./middleware/authMiddleware";
@@ -29,6 +30,7 @@ async function startServer() {
 
   app.use(cors());
   app.use(express.json());
+  app.use("/cam_screens", express.static(path.resolve(process.cwd(), "cam_screens")));
 
   app.use((req, _res, next) => {
     console.log(`[API] ${req.method} ${req.url}`);
