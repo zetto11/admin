@@ -103,7 +103,9 @@ async function startServer() {
     storageGb: number;
     retainDays: number;
     lastTickMs: number;
-    previousStatus: string;
+    status: "online" | "offline" | "blocked";
+    lastResumeMs: number;
+    paused: boolean;
     lastRetentionAlertAt: number;
   }> = {};
 
@@ -112,7 +114,7 @@ async function startServer() {
   const runTelemetryCycle = async () => {
     try {
       const [rows]: any = await db.execute(
-        `SELECT c.id, c.zone, c.status, ct.uptime_seconds, ct.uptime_hours, ct.signal_percent, ct.thermal_celsius, ct.load_percent,
+        `SELECT c.id, c.zone, c.status, c.is_blocked, ct.uptime_seconds, ct.uptime_hours, ct.signal_percent, ct.thermal_celsius, ct.load_percent,
                 ct.retain_days_remaining, ct.storage_used_tb, ct.storage_node_label
          FROM cameras c
          LEFT JOIN camera_telemetry ct ON ct.camera_id = c.id`
@@ -128,7 +130,9 @@ async function startServer() {
             storageGb: Math.max(0.5, Number(cam.storage_used_tb ?? 0.0005) * 1024),
             retainDays: Math.max(0, Number(cam.retain_days_remaining ?? randInt(7, 30))),
             lastTickMs: Date.now(),
-            previousStatus: String(cam.status || "offline"),
+            status: cam.is_blocked ? "blocked" : (String(cam.status || "offline") === "online" ? "online" : "offline"),
+            lastResumeMs: Date.now(),
+            paused: !(String(cam.status || "offline") === "online") || !!cam.is_blocked,
             lastRetentionAlertAt: 0,
           };
         }
@@ -140,27 +144,37 @@ async function startServer() {
 
         const zoneKey = String(cam.zone || "").toLowerCase();
         const zoneThermalBias = zoneKey === "factory" ? 12 : zoneKey === "warehouse" ? 6 : 2;
-        const currentStatus = String(cam.status || "offline");
+        const currentStatus: "online" | "offline" | "blocked" = cam.is_blocked
+          ? "blocked"
+          : (String(cam.status || "offline") === "online" ? "online" : "offline");
 
-        state.previousStatus = currentStatus;
+        if (state.status !== currentStatus) {
+          if (currentStatus === "online") {
+            state.signal = randInt(60, 85);
+            state.load = randInt(10, 30);
+            state.thermal = randFloat(35, 45, 2);
+            state.paused = false;
+            state.lastResumeMs = nowMs;
+          } else {
+            state.paused = true;
+            state.lastResumeMs = 0;
+          }
+          state.status = currentStatus;
+        }
 
-        state.uptimeSeconds += elapsedSec;
-
-        if (currentStatus === "offline") {
-          state.signal = clamp(state.signal - randInt(10, 30), 0, 100);
-          state.load = clamp(state.load - randInt(2, 10), 0, 100);
-        } else {
+        if (!state.paused && currentStatus === "online") {
+          state.uptimeSeconds += elapsedSec;
           state.signal = clamp(state.signal + randInt(-5, 5), 0, 100);
           const activitySpike = Math.random() > 0.85 ? randInt(8, 20) : 0;
           state.load = clamp(state.load + randInt(-10, 10) + activitySpike, 0, 100);
+
+          const targetThermal = clamp(30 + zoneThermalBias + state.load * 0.45, 30, 90);
+          const thermalDelta = clamp(targetThermal - state.thermal, -1.5, 1.5);
+          state.thermal = clamp(state.thermal + thermalDelta + randFloat(-0.3, 0.3, 2), 30, 90);
+
+          state.storageGb = Math.min(20, state.storageGb + (elapsedSec * 0.0015) + (state.load * 0.0002));
+          state.retainDays = Math.max(0, state.retainDays - (elapsedSec / 86400));
         }
-
-        const targetThermal = clamp(30 + zoneThermalBias + state.load * 0.45, 30, 90);
-        const thermalDelta = clamp(targetThermal - state.thermal, -1.5, 1.5);
-        state.thermal = clamp(state.thermal + thermalDelta + randFloat(-0.3, 0.3, 2), 30, 90);
-
-        state.storageGb = Math.min(20, state.storageGb + (elapsedSec * 0.0015) + (state.load * 0.0002));
-        state.retainDays = Math.max(0, state.retainDays - (elapsedSec / 86400));
 
         const uptimeHours = Number((state.uptimeSeconds / 3600).toFixed(3));
         const storageTb = Number((state.storageGb / 1024).toFixed(4));
@@ -219,6 +233,7 @@ async function startServer() {
           load_percent: Math.round(state.load),
           storage_used_tb: storageTb,
           retain_days_remaining: retainDays,
+          status: currentStatus,
         });
       }
     } catch {
