@@ -49,6 +49,7 @@ export const createCamera = async (req: AuthRequest, res: Response) => {
     factory: "Factory",
     warehouse: "Warehouse",
     office: "Office",
+    "auto-detected": "Gate",
   };
   if (!zoneMap[normalizedZone]) {
     return res.status(400).json({ error: "zone must be one of: Gate, Factory, Warehouse, Office" });
@@ -60,6 +61,53 @@ export const createCamera = async (req: AuthRequest, res: Response) => {
       [name, ip_simulated, zoneMap[normalizedZone]]
     );
     return res.status(201).json({ success: true, id: result.insertId });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+export const discoverCameras = async (_req: AuthRequest, res: Response) => {
+  try {
+    const [rows]: any = await db.execute("SELECT ip_simulated FROM cameras");
+    const existingIps = new Set<string>();
+    const subnetPrefixes = new Set<string>(["192.168.1", "192.168.11"]);
+
+    for (const row of rows) {
+      const value = String(row.ip_simulated || "");
+      existingIps.add(value);
+      const match = value.match(/https?:\/\/(\d+\.\d+\.\d+)\.(\d+)/i);
+      if (match) subnetPrefixes.add(match[1]);
+    }
+
+    const candidates: string[] = [];
+    subnetPrefixes.forEach((prefix) => {
+      for (let i = 100; i <= 110; i += 1) {
+        candidates.push(`http://${prefix}.${i}:8080/video`);
+      }
+    });
+
+    const checks = await Promise.all(
+      candidates.map(async (url) => {
+        if (existingIps.has(url)) return null;
+        try {
+          const response = await fetch(url, { signal: AbortSignal.timeout(900) });
+          if (response.status < 500) {
+            const suffix = url.match(/(\d+):8080\/video$/)?.[1] || "X";
+            return {
+              name: `NODE_${suffix}`,
+              ip_simulated: url,
+              zone: "Auto-Detected",
+            };
+          }
+          return null;
+        } catch {
+          return null;
+        }
+      })
+    );
+
+    const found = checks.filter(Boolean);
+    return res.json(found);
   } catch (err: any) {
     return res.status(500).json({ error: err.message });
   }

@@ -453,6 +453,9 @@ export default function Cameras() {
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState({ name: '', ip_simulated: '', zone: 'Gate' });
   const [createError, setCreateError] = useState('');
+  const [detecting, setDetecting] = useState(false);
+  const [detectedCameras, setDetectedCameras] = useState<Array<{ name: string; ip_simulated: string; zone: string }>>([]);
+  const [scanMessage, setScanMessage] = useState('');
 
   useEffect(() => {
     fetchCameras();
@@ -543,6 +546,60 @@ export default function Cameras() {
     }
   };
 
+  const handleDetectCamera = async () => {
+    let ticker: ReturnType<typeof setInterval> | null = null;
+    try {
+      setDetecting(true);
+      setDetectedCameras([]);
+      const messages = [
+        'Scanning secure network nodes...',
+        'Analyzing network topology...',
+        'Detecting live video streams...',
+        'Identifying security nodes...',
+      ];
+      let idx = 0;
+      setScanMessage(messages[idx]);
+      ticker = setInterval(() => {
+        idx = (idx + 1) % messages.length;
+        setScanMessage(messages[idx]);
+      }, 700);
+
+      const res = await fetch('/api/cameras/discover', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      setDetectedCameras(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error(err);
+      setDetectedCameras([]);
+    } finally {
+      if (ticker) clearInterval(ticker);
+      setDetecting(false);
+    }
+  };
+
+  const addDetectedCamera = async (cam: { name: string; ip_simulated: string; zone: string }) => {
+    try {
+      const res = await fetch('/api/cameras', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          name: cam.name,
+          ip_simulated: cam.ip_simulated,
+          zone: cam.zone
+        })
+      });
+      if (!res.ok) return;
+      setDetectedCameras(prev => prev.filter(c => c.ip_simulated !== cam.ip_simulated));
+      fetchCameras();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const filteredCameras = cameras.filter(cam => {
     const normalizedSearch = search.toLowerCase().trim();
     const currentStatus = liveStatus[cam.id] || cam.status;
@@ -594,6 +651,9 @@ export default function Cameras() {
                <List size={16} />
              </button>
            </div>
+           <button onClick={handleDetectCamera} disabled={detecting} className="btn-action">
+             {detecting ? 'Scanning secure network nodes...' : 'Detect Camera'}
+           </button>
            <button
              onClick={() => {
                setCreateError('');
@@ -720,6 +780,30 @@ export default function Cameras() {
             </motion.div>
           ))}
         </AnimatePresence>
+      </div>
+
+      <div className="glass-card p-4 bg-white/[0.02] border-white/5">
+        <h3 className="text-sm font-bold text-white mb-3">🟢 Discovered Network Nodes</h3>
+        {detecting && (
+          <p className="text-xs text-blue-400 font-mono animate-pulse">{scanMessage}</p>
+        )}
+        {!detecting && detectedCameras.length === 0 && (
+          <p className="text-xs text-slate-500">No active surveillance nodes detected</p>
+        )}
+        <div className="space-y-3">
+          {detectedCameras.map((cam) => (
+            <div key={cam.ip_simulated} className="p-3 rounded-lg bg-white/[0.02] border border-white/5 flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-sm text-white font-semibold truncate">{cam.name}</p>
+                <p className="text-[11px] text-slate-400 font-mono truncate">{cam.ip_simulated}</p>
+                <span className="text-[10px] text-amber-400 font-bold">UNREGISTERED NODE</span>
+              </div>
+              <button onClick={() => addDetectedCamera(cam)} className="btn-action bg-blue-600 text-white border-blue-500">
+                ADD TO SYSTEM
+              </button>
+            </div>
+          ))}
+        </div>
       </div>
 
       {filteredCameras.length === 0 && (
