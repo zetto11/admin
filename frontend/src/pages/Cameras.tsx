@@ -38,8 +38,9 @@ const CameraFeed = ({
 }) => {
   const { token } = useAuth();
   const [timestamp, setTimestamp] = useState(new Date().toLocaleTimeString());
+  const [streamLive, setStreamLive] = useState(false);
   const canRenderStream = !!camera.ip_simulated && !camera.is_blocked && !streamFailed;
-  const resolvedStatus = canRenderStream ? 'online' : camera.status;
+  const resolvedStatus = streamLive && !camera.is_blocked ? 'online' : 'offline';
   const [isCapturing, setIsCapturing] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [captureMessage, setCaptureMessage] = useState<string | null>(null);
@@ -51,6 +52,10 @@ const CameraFeed = ({
        clearInterval(timer);
     };
   }, []);
+
+  useEffect(() => {
+    setStreamLive(false);
+  }, [camera.id, camera.ip_simulated]);
 
   const handleCaptureFrame = async () => {
     try {
@@ -150,8 +155,14 @@ const CameraFeed = ({
                  src={camera.ip_simulated}
                  className="w-full h-full object-cover"
                  alt={camera.name}
-                 onError={onStreamError}
-                 onLoad={onStreamLoad}
+                 onError={() => {
+                   setStreamLive(false);
+                   onStreamError();
+                 }}
+                 onLoad={() => {
+                   setStreamLive(true);
+                   onStreamLoad();
+                 }}
                />
                <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_50%_50%,transparent_50%,rgba(0,0,0,0.4)_100%)]" />
                <div className="absolute inset-0 pointer-events-none mix-blend-overlay opacity-20 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] bg-repeat" />
@@ -288,14 +299,14 @@ interface CameraCardProps {
 
 function CameraCard({ camera, onClick, onBlock, isAdmin, viewMode }: CameraCardProps) {
   const [streamFailed, setStreamFailed] = useState(false);
-  const [streamLive, setStreamLive] = useState(camera.status === 'online');
+  const [streamLive, setStreamLive] = useState(false);
   const canRenderStream = !!camera.ip_simulated && !camera.is_blocked && !streamFailed;
-  const resolvedStatus = streamLive && !camera.is_blocked ? 'online' : camera.status;
+  const resolvedStatus = streamLive && !camera.is_blocked ? 'online' : 'offline';
   const isListMode = viewMode === 'list';
 
   useEffect(() => {
     setStreamFailed(false);
-    setStreamLive(camera.status === 'online');
+    setStreamLive(false);
   }, [camera.ip_simulated, camera.status, camera.is_blocked]);
 
   return (
