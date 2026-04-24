@@ -56,6 +56,14 @@ export const createCamera = async (req: AuthRequest, res: Response) => {
   }
 
   try {
+    const [existsRows]: any = await db.execute(
+      "SELECT id FROM cameras WHERE name = ? OR ip_simulated = ? LIMIT 1",
+      [name, ip_simulated]
+    );
+    if (existsRows.length) {
+      return res.status(409).json({ error: "Camera name or IP/URL already exists" });
+    }
+
     const [result]: any = await db.execute(
       "INSERT INTO cameras (name, ip_simulated, zone, status, is_blocked) VALUES (?, ?, ?, 'offline', false)",
       [name, ip_simulated, zoneMap[normalizedZone]]
@@ -153,6 +161,14 @@ export const updateCamera = async (req: AuthRequest, res: Response) => {
   }
 
   try {
+    const [existsRows]: any = await db.execute(
+      "SELECT id FROM cameras WHERE (name = ? OR ip_simulated = ?) AND id <> ? LIMIT 1",
+      [name, ip_simulated, id]
+    );
+    if (existsRows.length) {
+      return res.status(409).json({ error: "Camera name or IP/URL already exists" });
+    }
+
     await db.execute(
       "UPDATE cameras SET name = ?, ip_simulated = ?, zone = ? WHERE id = ?",
       [name, ip_simulated, zoneMap[normalizedZone], id]

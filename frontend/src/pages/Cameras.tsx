@@ -504,6 +504,11 @@ export default function Cameras() {
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState({ name: '', ip_simulated: '', zone: 'Gate' });
   const [createError, setCreateError] = useState('');
+  const [editCamera, setEditCamera] = useState<Camera | null>(null);
+  const [editForm, setEditForm] = useState({ name: '', ip_simulated: '', zone: 'Gate' });
+  const [editError, setEditError] = useState('');
+  const [deleteCameraTarget, setDeleteCameraTarget] = useState<Camera | null>(null);
+  const [deleteError, setDeleteError] = useState('');
   const [detecting, setDetecting] = useState(false);
   const [detectedCameras, setDetectedCameras] = useState<Array<{ name: string; ip_simulated: string; zone: string }>>([]);
   const [scanMessage, setScanMessage] = useState('');
@@ -652,18 +657,35 @@ export default function Cameras() {
   };
 
   const handleEditCamera = async (camera: Camera) => {
-    const confirmEdit = window.confirm(`Are you sure you want to modify ${camera.name}?`);
-    if (!confirmEdit) return;
+    setEditError('');
+    setEditCamera(camera);
+    setEditForm({
+      name: camera.name,
+      ip_simulated: camera.ip_simulated,
+      zone: camera.zone || 'Gate',
+    });
+  };
 
-    const name = window.prompt('Camera name', camera.name)?.trim();
-    if (!name) return;
-    const ip = window.prompt('Camera stream URL (ip_simulated)', camera.ip_simulated)?.trim();
-    if (!ip || !ip.toLowerCase().startsWith('http')) return;
-    const zone = window.prompt('Camera zone (Gate, Factory, Warehouse, Office)', camera.zone)?.trim();
-    if (!zone) return;
+  const handleDeleteCamera = async (camera: Camera) => {
+    setDeleteError('');
+    setDeleteCameraTarget(camera);
+  };
 
+  const submitEditCamera = async () => {
+    if (!editCamera) return;
+    const name = editForm.name.trim();
+    const ip = editForm.ip_simulated.trim();
+    const zone = editForm.zone.trim();
+    if (!name || !ip || !zone) {
+      setEditError('All fields are required.');
+      return;
+    }
+    if (!ip.toLowerCase().startsWith('http')) {
+      setEditError('ip_simulated must start with http.');
+      return;
+    }
     try {
-      const res = await fetch(`/api/cameras/${camera.id}`, {
+      const res = await fetch(`/api/cameras/${editCamera.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -671,25 +693,36 @@ export default function Cameras() {
         },
         body: JSON.stringify({ name, ip_simulated: ip, zone }),
       });
-      if (!res.ok) return;
+      const data = await res.json();
+      if (!res.ok) {
+        setEditError(data?.error || 'Failed to modify camera.');
+        return;
+      }
+      setEditCamera(null);
       fetchCameras();
     } catch (err) {
       console.error(err);
+      setEditError('Failed to modify camera.');
     }
   };
 
-  const handleDeleteCamera = async (camera: Camera) => {
-    const confirmDelete = window.confirm(`Are you sure you want to delete ${camera.name}?`);
-    if (!confirmDelete) return;
+  const confirmDeleteCamera = async () => {
+    if (!deleteCameraTarget) return;
     try {
-      const res = await fetch(`/api/cameras/${camera.id}`, {
+      const res = await fetch(`/api/cameras/${deleteCameraTarget.id}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!res.ok) return;
+      const data = await res.json();
+      if (!res.ok) {
+        setDeleteError(data?.error || 'Failed to delete camera.');
+        return;
+      }
+      setDeleteCameraTarget(null);
       fetchCameras();
     } catch (err) {
       console.error(err);
+      setDeleteError('Failed to delete camera.');
     }
   };
 
@@ -792,6 +825,41 @@ export default function Cameras() {
                 setShowModal(false);
                 setCreateError('');
               }} className="btn-action">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editCamera && (
+        <div className="fixed inset-0 z-[70] bg-black/70 flex items-center justify-center p-4">
+          <div className="glass-card w-full max-w-md p-6 space-y-4">
+            <h3 className="text-white font-bold text-lg">Modify Camera</h3>
+            <input value={editForm.name} onChange={(e) => setEditForm(prev => ({ ...prev, name: e.target.value }))} className="input-soc w-full" />
+            <input value={editForm.ip_simulated} onChange={(e) => setEditForm(prev => ({ ...prev, ip_simulated: e.target.value }))} className="input-soc w-full" />
+            <select value={editForm.zone} onChange={(e) => setEditForm(prev => ({ ...prev, zone: e.target.value }))} className="input-soc w-full">
+              <option value="Gate">Gate</option>
+              <option value="Factory">Factory</option>
+              <option value="Warehouse">Warehouse</option>
+              <option value="Office">Office</option>
+            </select>
+            {editError && <p className="text-rose-400 text-xs">{editError}</p>}
+            <div className="flex gap-2 justify-end">
+              <button onClick={submitEditCamera} className="btn-action bg-amber-600 text-white border-amber-500">Save Changes</button>
+              <button onClick={() => { setEditCamera(null); setEditError(''); }} className="btn-action">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteCameraTarget && (
+        <div className="fixed inset-0 z-[70] bg-black/70 flex items-center justify-center p-4">
+          <div className="glass-card w-full max-w-md p-6 space-y-4">
+            <h3 className="text-white font-bold text-lg">Are you sure you want to delete this camera?</h3>
+            <p className="text-xs text-slate-400">{deleteCameraTarget.name} • {deleteCameraTarget.ip_simulated}</p>
+            {deleteError && <p className="text-rose-400 text-xs">{deleteError}</p>}
+            <div className="flex gap-2 justify-end">
+              <button onClick={confirmDeleteCamera} className="btn-action bg-rose-600 text-white border-rose-500">Yes, Delete</button>
+              <button onClick={() => { setDeleteCameraTarget(null); setDeleteError(''); }} className="btn-action">Cancel</button>
             </div>
           </div>
         </div>
