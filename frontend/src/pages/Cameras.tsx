@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../App';
 import { Camera } from '../types';
 import { 
@@ -344,7 +344,9 @@ function CameraCard({ camera, onClick, onBlock, onEdit, onDelete, isAdmin, viewM
   const [streamFailed, setStreamFailed] = useState(false);
   const [streamLive, setStreamLive] = useState(false);
   const canRenderStream = !!camera.ip_simulated && !camera.is_blocked && !streamFailed;
-  const resolvedStatus = streamLive && !camera.is_blocked ? 'online' : 'offline';
+  const retryTimerRef = useRef<number | null>(null);
+  const backendStatus: 'online' | 'offline' = camera.status === 'online' && !camera.is_blocked ? 'online' : 'offline';
+  const resolvedStatus = !camera.is_blocked && (streamLive || backendStatus === 'online') ? 'online' : 'offline';
   const isListMode = viewMode === 'list';
   const [streamSrc, setStreamSrc] = useState(normalizeStreamUrl(camera.ip_simulated));
   const [triedVideoFallback, setTriedVideoFallback] = useState(false);
@@ -354,7 +356,18 @@ function CameraCard({ camera, onClick, onBlock, onEdit, onDelete, isAdmin, viewM
     setStreamLive(false);
     setStreamSrc(normalizeStreamUrl(camera.ip_simulated));
     setTriedVideoFallback(false);
+    if (retryTimerRef.current) {
+      window.clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
   }, [camera.ip_simulated, camera.status, camera.is_blocked]);
+
+  useEffect(() => () => {
+    if (retryTimerRef.current) {
+      window.clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+  }, []);
 
   return (
     <motion.div
@@ -392,6 +405,16 @@ function CameraCard({ camera, onClick, onBlock, onEdit, onDelete, isAdmin, viewM
                       setStreamFailed(true);
                       setStreamLive(false);
                       onStreamStatusChange('offline');
+                      if (retryTimerRef.current) {
+                        window.clearTimeout(retryTimerRef.current);
+                      }
+                      retryTimerRef.current = window.setTimeout(() => {
+                        setStreamFailed(false);
+                        setStreamSrc((prev) => {
+                          const base = String(prev || '').split('?')[0];
+                          return `${base}?retry=${Date.now()}`;
+                        });
+                      }, 3000);
                     }}
                     onLoad={() => {
                       setStreamFailed(false);
@@ -550,6 +573,7 @@ export default function Cameras() {
                 load_percent: payload.load_percent,
                 storage_used_tb: payload.storage_used_tb,
                 retain_days_remaining: payload.retain_days_remaining,
+                status: payload.status === 'online' ? 'online' : 'offline',
               }
             : cam
         )
