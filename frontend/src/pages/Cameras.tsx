@@ -33,6 +33,14 @@ const normalizeStreamUrl = (url: string, forceVideo = false) => {
   return trimmed;
 };
 
+const formatUptimeHHMMSS = (totalSeconds: number) => {
+  const sec = Math.max(0, Math.floor(totalSeconds));
+  const hh = String(Math.floor(sec / 3600)).padStart(2, '0');
+  const mm = String(Math.floor((sec % 3600) / 60)).padStart(2, '0');
+  const ss = String(sec % 60).padStart(2, '0');
+  return `${hh}:${mm}:${ss}`;
+};
+
 // Camera Feed Component
 const CameraFeed = ({
   camera,
@@ -58,6 +66,7 @@ const CameraFeed = ({
   const [analysisMessage, setAnalysisMessage] = useState<string | null>(null);
   const [streamSrc, setStreamSrc] = useState(normalizeStreamUrl(camera.ip_simulated));
   const [triedVideoFallback, setTriedVideoFallback] = useState(false);
+  const [uptimeSeconds, setUptimeSeconds] = useState(Math.max(0, Math.floor(Number(camera.uptime_hours ?? 0) * 3600)));
 
   useEffect(() => {
     const timer = setInterval(() => setTimestamp(new Date().toLocaleTimeString()), 1000);
@@ -70,7 +79,19 @@ const CameraFeed = ({
     setStreamLive(false);
     setStreamSrc(normalizeStreamUrl(camera.ip_simulated));
     setTriedVideoFallback(false);
-  }, [camera.id, camera.ip_simulated]);
+    setUptimeSeconds(Math.max(0, Math.floor(Number(camera.uptime_hours ?? 0) * 3600)));
+  }, [camera.id, camera.ip_simulated, camera.uptime_hours]);
+
+  useEffect(() => {
+    if (resolvedStatus !== 'online') {
+      setUptimeSeconds(0);
+      return;
+    }
+    const timer = setInterval(() => {
+      setUptimeSeconds(prev => prev + 1);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [resolvedStatus, camera.id]);
 
   const handleCaptureFrame = async () => {
     try {
@@ -255,7 +276,7 @@ const CameraFeed = ({
               <div className="grid grid-cols-2 gap-4">
                  {[
                    { label: 'Signal', val: camera.signal_percent != null ? `${camera.signal_percent}%` : 'N/A', color: 'text-emerald-500' },
-                   { label: 'Uptime', val: camera.uptime_hours != null ? `${camera.uptime_hours}h` : 'N/A', color: 'text-blue-400' },
+                   { label: 'Uptime', val: formatUptimeHHMMSS(uptimeSeconds), color: 'text-blue-400' },
                    { label: 'Thermal', val: camera.thermal_celsius != null ? `${Number(camera.thermal_celsius).toFixed(1)}°C` : 'N/A', color: 'text-amber-500' },
                    { label: 'Load', val: camera.load_percent != null ? `${camera.load_percent}%` : 'N/A', color: 'text-slate-400' }
                  ].map(i => (
