@@ -450,6 +450,8 @@ export default function Cameras() {
   const [selectedCamera, setSelectedCamera] = useState<Camera | null>(null);
   const [streamErrors, setStreamErrors] = useState<Record<number, boolean>>({});
   const [liveStatus, setLiveStatus] = useState<Record<number, 'online' | 'offline'>>({});
+  const [showModal, setShowModal] = useState(false);
+  const [form, setForm] = useState({ name: '', ip_simulated: '', zone: '' });
 
   useEffect(() => {
     fetchCameras();
@@ -494,6 +496,35 @@ export default function Cameras() {
         body: JSON.stringify({ camera_id: camera.id }),
       });
       setSelectedCamera(camera);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleCreateCamera = async () => {
+    const name = form.name.trim();
+    const ip = form.ip_simulated.trim();
+    const zone = form.zone.trim();
+    if (!name || !ip || !zone) return;
+    if (!ip.toLowerCase().startsWith('http')) return;
+
+    try {
+      const res = await fetch('/api/cameras', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          name,
+          ip_simulated: ip,
+          zone,
+        }),
+      });
+      if (!res.ok) return;
+      setShowModal(false);
+      setForm({ name: '', ip_simulated: '', zone: '' });
+      fetchCameras();
     } catch (err) {
       console.error(err);
     }
@@ -550,9 +581,44 @@ export default function Cameras() {
                <List size={16} />
              </button>
            </div>
-           <button className="btn-action bg-blue-600 text-white border-blue-500 shadow-lg shadow-blue-600/20 hover:bg-blue-500">Node Provisioning</button>
+           <button
+             onClick={() => setShowModal(true)}
+             className="btn-action bg-blue-600 text-white border-blue-500 shadow-lg shadow-blue-600/20 hover:bg-blue-500"
+           >
+             Node Provisioning
+           </button>
         </div>
       </header>
+
+      {showModal && (
+        <div className="fixed inset-0 z-[70] bg-black/70 flex items-center justify-center p-4">
+          <div className="glass-card w-full max-w-md p-6 space-y-4">
+            <h3 className="text-white font-bold text-lg">Add Camera</h3>
+            <input
+              value={form.name}
+              onChange={(e) => setForm(prev => ({ ...prev, name: e.target.value }))}
+              placeholder="name"
+              className="input-soc w-full"
+            />
+            <input
+              value={form.ip_simulated}
+              onChange={(e) => setForm(prev => ({ ...prev, ip_simulated: e.target.value }))}
+              placeholder="ip_simulated"
+              className="input-soc w-full"
+            />
+            <input
+              value={form.zone}
+              onChange={(e) => setForm(prev => ({ ...prev, zone: e.target.value }))}
+              placeholder="zone"
+              className="input-soc w-full"
+            />
+            <div className="flex gap-2 justify-end">
+              <button onClick={handleCreateCamera} className="btn-action bg-blue-600 text-white border-blue-500">Add Camera</button>
+              <button onClick={() => setShowModal(false)} className="btn-action">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Advanced Filter Interface */}
       <div className="glass-card p-2 bg-white/[0.02] border-white/5">

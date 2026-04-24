@@ -34,6 +34,26 @@ export const getCameras = async (req: AuthRequest, res: Response) => {
   }
 };
 
+export const createCamera = async (req: AuthRequest, res: Response) => {
+  const { name, ip_simulated, zone } = req.body || {};
+  if (!name || !ip_simulated || !zone) {
+    return res.status(400).json({ error: "name, ip_simulated and zone are required" });
+  }
+  if (!String(ip_simulated).toLowerCase().startsWith("http")) {
+    return res.status(400).json({ error: "ip_simulated must start with http" });
+  }
+
+  try {
+    const [result]: any = await db.execute(
+      "INSERT INTO cameras (name, ip_simulated, zone, status, is_blocked) VALUES (?, ?, ?, 'offline', false)",
+      [name, ip_simulated, zone]
+    );
+    return res.status(201).json({ success: true, id: result.insertId });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+};
+
 export const blockCamera = (io: Server) => async (req: AuthRequest, res: Response) => {
   const { id } = req.params;
   const { blocked } = req.body;
