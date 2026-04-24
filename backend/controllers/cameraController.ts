@@ -43,10 +43,21 @@ export const createCamera = async (req: AuthRequest, res: Response) => {
     return res.status(400).json({ error: "ip_simulated must start with http" });
   }
 
+  const normalizedZone = String(zone).trim().toLowerCase();
+  const zoneMap: Record<string, "Gate" | "Factory" | "Warehouse" | "Office"> = {
+    gate: "Gate",
+    factory: "Factory",
+    warehouse: "Warehouse",
+    office: "Office",
+  };
+  if (!zoneMap[normalizedZone]) {
+    return res.status(400).json({ error: "zone must be one of: Gate, Factory, Warehouse, Office" });
+  }
+
   try {
     const [result]: any = await db.execute(
       "INSERT INTO cameras (name, ip_simulated, zone, status, is_blocked) VALUES (?, ?, ?, 'offline', false)",
-      [name, ip_simulated, zone]
+      [name, ip_simulated, zoneMap[normalizedZone]]
     );
     return res.status(201).json({ success: true, id: result.insertId });
   } catch (err: any) {

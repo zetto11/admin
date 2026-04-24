@@ -451,7 +451,8 @@ export default function Cameras() {
   const [streamErrors, setStreamErrors] = useState<Record<number, boolean>>({});
   const [liveStatus, setLiveStatus] = useState<Record<number, 'online' | 'offline'>>({});
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({ name: '', ip_simulated: '', zone: '' });
+  const [form, setForm] = useState({ name: '', ip_simulated: '', zone: 'Gate' });
+  const [createError, setCreateError] = useState('');
 
   useEffect(() => {
     fetchCameras();
@@ -505,10 +506,17 @@ export default function Cameras() {
     const name = form.name.trim();
     const ip = form.ip_simulated.trim();
     const zone = form.zone.trim();
-    if (!name || !ip || !zone) return;
-    if (!ip.toLowerCase().startsWith('http')) return;
+    if (!name || !ip || !zone) {
+      setCreateError('All fields are required.');
+      return;
+    }
+    if (!ip.toLowerCase().startsWith('http')) {
+      setCreateError('ip_simulated must start with http.');
+      return;
+    }
 
     try {
+      setCreateError('');
       const res = await fetch('/api/cameras', {
         method: 'POST',
         headers: {
@@ -521,12 +529,17 @@ export default function Cameras() {
           zone,
         }),
       });
-      if (!res.ok) return;
+      const data = await res.json();
+      if (!res.ok) {
+        setCreateError(data?.error || 'Failed to add camera.');
+        return;
+      }
       setShowModal(false);
-      setForm({ name: '', ip_simulated: '', zone: '' });
+      setForm({ name: '', ip_simulated: '', zone: 'Gate' });
       fetchCameras();
     } catch (err) {
       console.error(err);
+      setCreateError('Failed to add camera.');
     }
   };
 
@@ -582,7 +595,10 @@ export default function Cameras() {
              </button>
            </div>
            <button
-             onClick={() => setShowModal(true)}
+             onClick={() => {
+               setCreateError('');
+               setShowModal(true);
+             }}
              className="btn-action bg-blue-600 text-white border-blue-500 shadow-lg shadow-blue-600/20 hover:bg-blue-500"
            >
              Node Provisioning
@@ -606,15 +622,23 @@ export default function Cameras() {
               placeholder="ip_simulated"
               className="input-soc w-full"
             />
-            <input
+            <select
               value={form.zone}
               onChange={(e) => setForm(prev => ({ ...prev, zone: e.target.value }))}
-              placeholder="zone"
               className="input-soc w-full"
-            />
+            >
+              <option value="Gate">Gate</option>
+              <option value="Factory">Factory</option>
+              <option value="Warehouse">Warehouse</option>
+              <option value="Office">Office</option>
+            </select>
+            {createError && <p className="text-rose-400 text-xs">{createError}</p>}
             <div className="flex gap-2 justify-end">
               <button onClick={handleCreateCamera} className="btn-action bg-blue-600 text-white border-blue-500">Add Camera</button>
-              <button onClick={() => setShowModal(false)} className="btn-action">Cancel</button>
+              <button onClick={() => {
+                setShowModal(false);
+                setCreateError('');
+              }} className="btn-action">Cancel</button>
             </div>
           </div>
         </div>
