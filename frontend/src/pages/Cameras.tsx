@@ -295,9 +295,10 @@ interface CameraCardProps {
   onBlock: () => void | Promise<void>;
   isAdmin: boolean;
   viewMode: 'grid' | 'list';
+  onStreamStatusChange: (status: 'online' | 'offline') => void;
 }
 
-function CameraCard({ camera, onClick, onBlock, isAdmin, viewMode }: CameraCardProps) {
+function CameraCard({ camera, onClick, onBlock, isAdmin, viewMode, onStreamStatusChange }: CameraCardProps) {
   const [streamFailed, setStreamFailed] = useState(false);
   const [streamLive, setStreamLive] = useState(false);
   const canRenderStream = !!camera.ip_simulated && !camera.is_blocked && !streamFailed;
@@ -336,10 +337,12 @@ function CameraCard({ camera, onClick, onBlock, isAdmin, viewMode }: CameraCardP
                     onError={() => {
                       setStreamFailed(true);
                       setStreamLive(false);
+                      onStreamStatusChange('offline');
                     }}
                     onLoad={() => {
                       setStreamFailed(false);
                       setStreamLive(true);
+                      onStreamStatusChange('online');
                     }}
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-all duration-500">
@@ -446,6 +449,7 @@ export default function Cameras() {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [selectedCamera, setSelectedCamera] = useState<Camera | null>(null);
   const [streamErrors, setStreamErrors] = useState<Record<number, boolean>>({});
+  const [liveStatus, setLiveStatus] = useState<Record<number, 'online' | 'offline'>>({});
 
   useEffect(() => {
     fetchCameras();
@@ -497,16 +501,27 @@ export default function Cameras() {
 
   const filteredCameras = cameras.filter(cam => {
     const normalizedSearch = search.toLowerCase().trim();
+    const currentStatus = liveStatus[cam.id] || cam.status;
     const matchesSearch =
       cam.name?.toLowerCase().includes(normalizedSearch) ||
       cam.ip_simulated?.toLowerCase().includes(normalizedSearch);
     const matchesZone = zoneFilter === 'All' || cam.zone === zoneFilter;
-    const matchesStatus = statusFilter === 'All' || cam.status === statusFilter.toLowerCase();
+    const matchesStatus =
+      statusFilter === 'All' ||
+      currentStatus === statusFilter.toLowerCase();
     return matchesSearch && matchesZone && matchesStatus;
   });
 
   const zones = ['All', ...Array.from(new Set(cameras.map(c => c.zone)))];
   const statuses = ['All', 'Online', 'Offline', 'Maintenance'];
+
+  useEffect(() => {
+    const initial: Record<number, 'online' | 'offline'> = {};
+    cameras.forEach(cam => {
+      initial[cam.id] = cam.status === 'online' ? 'online' : 'offline';
+    });
+    setLiveStatus(initial);
+  }, [cameras]);
 
   if (loading) return null;
 
@@ -606,6 +621,9 @@ export default function Cameras() {
                   camera={camera}
                   isAdmin={user?.role === 'admin'}
                   viewMode={viewMode}
+                  onStreamStatusChange={(status) => {
+                    setLiveStatus(prev => ({ ...prev, [camera.id]: status }));
+                  }}
                   onClick={() => handleView(camera)}
                   onBlock={() => toggleBlock(camera.id, camera.is_blocked)}
               />
