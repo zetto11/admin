@@ -45,6 +45,7 @@ CREATE TABLE `access_logs` (
 CREATE TABLE `camera_telemetry` (
   `camera_id` INT PRIMARY KEY,
   `signal_percent` TINYINT UNSIGNED DEFAULT NULL,
+  `uptime_seconds` BIGINT UNSIGNED DEFAULT 0,
   `uptime_hours` INT UNSIGNED DEFAULT NULL,
   `thermal_celsius` DECIMAL(5,2) DEFAULT NULL,
   `load_percent` TINYINT UNSIGNED DEFAULT NULL,
@@ -115,16 +116,16 @@ INSERT INTO `cameras` (`name`, `zone`, `ip_simulated`, `status`, `is_blocked`) V
 
 -- Camera Telemetry (Real Per-Camera Metrics)
 INSERT INTO `camera_telemetry`
-(`camera_id`, `signal_percent`, `uptime_hours`, `thermal_celsius`, `load_percent`, `retain_days_remaining`, `storage_used_tb`, `storage_node_label`)
+(`camera_id`, `signal_percent`, `uptime_seconds`, `uptime_hours`, `thermal_celsius`, `load_percent`, `retain_days_remaining`, `storage_used_tb`, `storage_node_label`)
 VALUES
-(1, 98, 942, 42.00, 12, 30, 4.20, 'Sigma-4'),
-(2, 95, 877, 43.10, 18, 28, 3.84, 'Sigma-4'),
-(3, 91, 1264, 49.40, 34, 26, 6.13, 'Sigma-7'),
-(4, 0, 0, NULL, 0, 22, 2.78, 'Sigma-7'),
-(5, 96, 733, 40.60, 21, 31, 5.01, 'Sigma-2'),
-(6, 93, 801, 41.20, 24, 29, 4.66, 'Sigma-2'),
-(7, 99, 1102, 38.40, 9, 34, 2.49, 'Sigma-1'),
-(8, 88, 690, 44.00, 27, 20, 7.04, 'Sigma-9');
+(1, 98, 3391200, 942, 42.00, 12, 30, 4.20, 'Sigma-4'),
+(2, 95, 3157200, 877, 43.10, 18, 28, 3.84, 'Sigma-4'),
+(3, 91, 4550400, 1264, 49.40, 34, 26, 6.13, 'Sigma-7'),
+(4, 0, 0, 0, NULL, 0, 22, 2.78, 'Sigma-7'),
+(5, 96, 2638800, 733, 40.60, 21, 31, 5.01, 'Sigma-2'),
+(6, 93, 2883600, 801, 41.20, 24, 29, 4.66, 'Sigma-2'),
+(7, 99, 3967200, 1102, 38.40, 9, 34, 2.49, 'Sigma-1'),
+(8, 88, 2484000, 690, 44.00, 27, 20, 7.04, 'Sigma-9');
 
 -- Test Alerts
 INSERT INTO `alerts` (`type`, `severity`, `description`, `camera_id`, `timestamp`) VALUES

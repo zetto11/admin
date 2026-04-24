@@ -112,7 +112,7 @@ async function startServer() {
   const runTelemetryCycle = async () => {
     try {
       const [rows]: any = await db.execute(
-        `SELECT c.id, c.zone, c.status, ct.uptime_hours, ct.signal_percent, ct.thermal_celsius, ct.load_percent,
+        `SELECT c.id, c.zone, c.status, ct.uptime_seconds, ct.uptime_hours, ct.signal_percent, ct.thermal_celsius, ct.load_percent,
                 ct.retain_days_remaining, ct.storage_used_tb, ct.storage_node_label
          FROM cameras c
          LEFT JOIN camera_telemetry ct ON ct.camera_id = c.id`
@@ -121,7 +121,7 @@ async function startServer() {
       for (const cam of rows) {
         if (!telemetryState[cam.id]) {
           telemetryState[cam.id] = {
-            uptimeSeconds: 0,
+            uptimeSeconds: Math.max(0, Number(cam.uptime_seconds ?? (Number(cam.uptime_hours ?? 0) * 3600))),
             signal: clamp(Number(cam.signal_percent ?? randInt(60, 100)), 0, 100),
             thermal: clamp(Number(cam.thermal_celsius ?? randFloat(35, 65, 2)), 30, 90),
             load: clamp(Number(cam.load_percent ?? randInt(10, 80)), 0, 100),
@@ -142,19 +142,9 @@ async function startServer() {
         const zoneThermalBias = zoneKey === "factory" ? 12 : zoneKey === "warehouse" ? 6 : 2;
         const currentStatus = String(cam.status || "offline");
 
-        if (state.previousStatus !== currentStatus && currentStatus === "online") {
-          state.uptimeSeconds = 0;
-          state.signal = randInt(60, 80);
-          state.thermal = randFloat(35, 45, 2);
-          state.load = randInt(10, 30);
-        }
         state.previousStatus = currentStatus;
 
-        if (currentStatus === "online") {
-          state.uptimeSeconds += elapsedSec;
-        } else {
-          state.uptimeSeconds = 0;
-        }
+        state.uptimeSeconds += elapsedSec;
 
         if (currentStatus === "offline") {
           state.signal = clamp(state.signal - randInt(10, 30), 0, 100);
@@ -179,10 +169,11 @@ async function startServer() {
 
         await db.execute(
           `INSERT INTO camera_telemetry
-          (camera_id, signal_percent, uptime_hours, thermal_celsius, load_percent, retain_days_remaining, storage_used_tb, storage_node_label)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          (camera_id, signal_percent, uptime_seconds, uptime_hours, thermal_celsius, load_percent, retain_days_remaining, storage_used_tb, storage_node_label)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON DUPLICATE KEY UPDATE
             signal_percent = VALUES(signal_percent),
+            uptime_seconds = VALUES(uptime_seconds),
             uptime_hours = VALUES(uptime_hours),
             thermal_celsius = VALUES(thermal_celsius),
             load_percent = VALUES(load_percent),
@@ -193,6 +184,7 @@ async function startServer() {
           [
             cam.id,
             Math.round(state.signal),
+            Math.floor(state.uptimeSeconds),
             uptimeHours,
             Number(state.thermal.toFixed(2)),
             Math.round(state.load),

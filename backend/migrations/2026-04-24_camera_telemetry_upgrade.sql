@@ -14,6 +14,7 @@ ALTER TABLE `cameras`
 CREATE TABLE IF NOT EXISTS `camera_telemetry` (
   `camera_id` INT PRIMARY KEY,
   `signal_percent` TINYINT UNSIGNED DEFAULT NULL,
+  `uptime_seconds` BIGINT UNSIGNED DEFAULT 0,
   `uptime_hours` DECIMAL(12,3) DEFAULT NULL,
   `thermal_celsius` DECIMAL(5,2) DEFAULT NULL,
   `load_percent` TINYINT UNSIGNED DEFAULT NULL,
@@ -24,12 +25,19 @@ CREATE TABLE IF NOT EXISTS `camera_telemetry` (
   CONSTRAINT `fk_telemetry_camera` FOREIGN KEY (`camera_id`) REFERENCES `cameras` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+ALTER TABLE `camera_telemetry`
+  ADD COLUMN IF NOT EXISTS `uptime_seconds` BIGINT UNSIGNED DEFAULT 0 AFTER `signal_percent`;
+
+UPDATE `camera_telemetry`
+SET `uptime_seconds` = COALESCE(`uptime_seconds`, FLOOR(COALESCE(`uptime_hours`, 0) * 3600));
+
 -- 4) Backfill telemetry for cameras that don't have a row yet.
 INSERT INTO `camera_telemetry`
-(`camera_id`, `signal_percent`, `uptime_hours`, `thermal_celsius`, `load_percent`, `retain_days_remaining`, `storage_used_tb`, `storage_node_label`)
+(`camera_id`, `signal_percent`, `uptime_seconds`, `uptime_hours`, `thermal_celsius`, `load_percent`, `retain_days_remaining`, `storage_used_tb`, `storage_node_label`)
 SELECT
   c.id,
   75,
+  0,
   0.000,
   40.00,
   20,

@@ -66,7 +66,15 @@ const CameraFeed = ({
   const [analysisMessage, setAnalysisMessage] = useState<string | null>(null);
   const [streamSrc, setStreamSrc] = useState(normalizeStreamUrl(camera.ip_simulated));
   const [triedVideoFallback, setTriedVideoFallback] = useState(false);
-  const [uptimeSeconds, setUptimeSeconds] = useState(0);
+  const uptimeSeconds = Math.max(
+    0,
+    Math.floor(
+      Number(
+        camera.uptime_seconds ??
+        ((camera.uptime_hours ?? 0) * 3600)
+      )
+    )
+  );
 
   useEffect(() => {
     const timer = setInterval(() => setTimestamp(new Date().toLocaleTimeString()), 1000);
@@ -79,18 +87,7 @@ const CameraFeed = ({
     setStreamLive(false);
     setStreamSrc(normalizeStreamUrl(camera.ip_simulated));
     setTriedVideoFallback(false);
-    setUptimeSeconds(0);
   }, [camera.id, camera.ip_simulated]);
-
-  useEffect(() => {
-    if (camera.status !== 'online' && !streamLive) {
-      return;
-    }
-    const timer = setInterval(() => {
-      setUptimeSeconds(prev => prev + 1);
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [camera.id, camera.status, streamLive]);
 
   const handleCaptureFrame = async () => {
     try {
@@ -511,7 +508,7 @@ function CameraCard({ camera, onClick, onBlock, onEdit, onDelete, isAdmin, viewM
 };
 
 export default function Cameras() {
-  const { token, user } = useAuth();
+  const { token, user, socket } = useAuth();
   const [cameras, setCameras] = useState<Camera[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -537,6 +534,32 @@ export default function Cameras() {
   useEffect(() => {
     fetchCameras();
   }, [token]);
+
+  useEffect(() => {
+    if (!socket) return;
+    const onTelemetry = (payload: any) => {
+      setCameras(prev =>
+        prev.map(cam =>
+          cam.id === payload.camera_id
+            ? {
+                ...cam,
+                signal_percent: payload.signal_percent,
+                uptime_seconds: payload.uptime_seconds,
+                uptime_hours: payload.uptime_hours,
+                thermal_celsius: payload.thermal_celsius,
+                load_percent: payload.load_percent,
+                storage_used_tb: payload.storage_used_tb,
+                retain_days_remaining: payload.retain_days_remaining,
+              }
+            : cam
+        )
+      );
+    };
+    socket.on('camera_telemetry_update', onTelemetry);
+    return () => {
+      socket.off('camera_telemetry_update', onTelemetry);
+    };
+  }, [socket]);
 
   const fetchCameras = async () => {
     try {

@@ -37,6 +37,7 @@ export const getCameras = async (req: AuthRequest, res: Response) => {
         c.is_blocked,
         c.last_seen,
         ct.signal_percent,
+        ct.uptime_seconds,
         ct.uptime_hours,
         ct.thermal_celsius,
         ct.load_percent,
@@ -92,11 +93,12 @@ export const createCamera = async (req: AuthRequest, res: Response) => {
     const telemetry = generateTelemetryByZone(zoneMap[normalizedZone]);
     await db.execute(
       `INSERT INTO camera_telemetry
-      (camera_id, signal_percent, uptime_hours, thermal_celsius, load_percent, retain_days_remaining, storage_used_tb, storage_node_label)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      (camera_id, signal_percent, uptime_seconds, uptime_hours, thermal_celsius, load_percent, retain_days_remaining, storage_used_tb, storage_node_label)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         result.insertId,
         telemetry.signal_percent,
+        0,
         telemetry.uptime_hours,
         telemetry.thermal_celsius,
         telemetry.load_percent,
@@ -238,6 +240,21 @@ export const deleteCamera = async (req: AuthRequest, res: Response) => {
   const { id } = req.params;
   try {
     await db.execute("DELETE FROM cameras WHERE id = ?", [id]);
+    return res.json({ success: true });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+export const restartCamera = async (req: AuthRequest, res: Response) => {
+  const { id } = req.params;
+  try {
+    await db.execute(
+      `UPDATE camera_telemetry
+       SET uptime_seconds = 0, uptime_hours = 0, signal_percent = ?, thermal_celsius = ?, load_percent = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE camera_id = ?`,
+      [randInt(60, 80), randFloat(35, 45, 2), randInt(10, 30), id]
+    );
     return res.json({ success: true });
   } catch (err: any) {
     return res.status(500).json({ error: err.message });

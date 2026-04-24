@@ -7,6 +7,7 @@ export interface Camera {
   is_blocked: boolean;
   last_seen: string;
   signal_percent?: number | null;
+  uptime_seconds?: number | null;
   uptime_hours?: number | null;
   thermal_celsius?: number | null;
   load_percent?: number | null;
