@@ -121,7 +121,7 @@ async function startServer() {
       for (const cam of rows) {
         if (!telemetryState[cam.id]) {
           telemetryState[cam.id] = {
-            uptimeSeconds: Math.max(0, Number(cam.uptime_hours ?? 0) * 3600),
+            uptimeSeconds: 0,
             signal: clamp(Number(cam.signal_percent ?? randInt(60, 100)), 0, 100),
             thermal: clamp(Number(cam.thermal_celsius ?? randFloat(35, 65, 2)), 30, 90),
             load: clamp(Number(cam.load_percent ?? randInt(10, 80)), 0, 100),

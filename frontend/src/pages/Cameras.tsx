@@ -66,7 +66,7 @@ const CameraFeed = ({
   const [analysisMessage, setAnalysisMessage] = useState<string | null>(null);
   const [streamSrc, setStreamSrc] = useState(normalizeStreamUrl(camera.ip_simulated));
   const [triedVideoFallback, setTriedVideoFallback] = useState(false);
-  const [uptimeSeconds, setUptimeSeconds] = useState(Math.max(0, Math.floor(Number(camera.uptime_hours ?? 0) * 3600)));
+  const [uptimeSeconds, setUptimeSeconds] = useState(0);
 
   useEffect(() => {
     const timer = setInterval(() => setTimestamp(new Date().toLocaleTimeString()), 1000);
@@ -79,8 +79,8 @@ const CameraFeed = ({
     setStreamLive(false);
     setStreamSrc(normalizeStreamUrl(camera.ip_simulated));
     setTriedVideoFallback(false);
-    setUptimeSeconds(Math.max(0, Math.floor(Number(camera.uptime_hours ?? 0) * 3600)));
-  }, [camera.id, camera.ip_simulated, camera.uptime_hours]);
+    setUptimeSeconds(0);
+  }, [camera.id, camera.ip_simulated]);
 
   useEffect(() => {
     if (camera.status !== 'online' && !streamLive) {
