@@ -83,7 +83,7 @@ const CameraFeed = ({
   }, [camera.id, camera.ip_simulated, camera.uptime_hours]);
 
   useEffect(() => {
-    if (resolvedStatus !== 'online') {
+    if (camera.status !== 'online') {
       setUptimeSeconds(0);
       return;
     }
@@ -91,7 +91,7 @@ const CameraFeed = ({
       setUptimeSeconds(prev => prev + 1);
     }, 1000);
     return () => clearInterval(timer);
-  }, [resolvedStatus, camera.id]);
+  }, [camera.id, camera.status]);
 
   const handleCaptureFrame = async () => {
     try {
