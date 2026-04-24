@@ -18,11 +18,13 @@ CREATE TABLE `cameras` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `name` VARCHAR(100) NOT NULL,
   `zone` ENUM('Gate', 'Factory', 'Warehouse', 'Office') NOT NULL,
-  `ip_simulated` VARCHAR(45) NOT NULL,
+  `ip_simulated` VARCHAR(255) NOT NULL,
   `status` ENUM('online', 'offline') DEFAULT 'online',
   `is_blocked` BOOLEAN DEFAULT FALSE,
   `last_seen` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  INDEX `idx_camera_zone` (`zone`)
+  INDEX `idx_camera_zone` (`zone`),
+  UNIQUE KEY `uq_camera_name` (`name`),
+  UNIQUE KEY `uq_camera_ip` (`ip_simulated`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 3. ACCESS LOGS TABLE
