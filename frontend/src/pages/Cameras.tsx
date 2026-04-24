@@ -341,9 +341,8 @@ interface CameraCardProps {
 
 function CameraCard({ camera, onClick, onBlock, onEdit, onDelete, isAdmin, viewMode }: CameraCardProps) {
   const [streamFailed, setStreamFailed] = useState(false);
-  const isRealCamera = String(camera.name || '').toUpperCase() === 'NODE_106';
   const showOnlineFeed = !camera.is_blocked && camera.status === 'online';
-  const canRenderStream = isRealCamera && !!camera.ip_simulated && showOnlineFeed;
+  const canRenderStream = !!camera.ip_simulated && showOnlineFeed;
   const retryTimerRef = useRef<number | null>(null);
   const backendStatus: 'online' | 'offline' = camera.status === 'online' && !camera.is_blocked ? 'online' : 'offline';
   const resolvedStatus = backendStatus;
@@ -388,16 +387,8 @@ function CameraCard({ camera, onClick, onBlock, onEdit, onDelete, isAdmin, viewM
           <div className="rounded-xl border border-white/15 bg-black/75 backdrop-blur-md p-3 shadow-2xl">
             <div className="grid grid-cols-[88px_1fr] gap-3 items-center">
               <div className="w-[88px] h-[56px] rounded-lg overflow-hidden border border-white/10 bg-black/50">
-                {showOnlineFeed ? (
-                  isRealCamera ? (
+                {canRenderStream ? (
                   <img src={streamSrc} alt={`${camera.name} preview`} className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full relative overflow-hidden bg-slate-900">
-                      <div className="absolute inset-0 bg-gradient-to-br from-blue-500/20 via-emerald-500/10 to-cyan-500/20 animate-pulse" />
-                      <div className="absolute inset-0 opacity-40" style={{ backgroundImage: 'repeating-linear-gradient(0deg, rgba(255,255,255,0.05) 0px, rgba(255,255,255,0.05) 1px, transparent 1px, transparent 3px)' }} />
-                      <div className="absolute bottom-1 left-1 right-1 text-[8px] text-emerald-300 font-mono tracking-wider uppercase">Mock Feed</div>
-                    </div>
-                  )
                 ) : (
                   <div className="w-full h-full flex items-center justify-center text-[9px] font-black tracking-widest text-slate-400 uppercase">
                     No Feed
@@ -438,50 +429,40 @@ function CameraCard({ camera, onClick, onBlock, onEdit, onDelete, isAdmin, viewM
 
         {/* Media Preview */}
         <div className={`${isListMode ? 'w-80 min-w-80 border-r border-white/5' : 'aspect-[16/10] border-b border-white/5'} bg-[#050507] relative cursor-pointer overflow-hidden`} onClick={onClick}>
-            {showOnlineFeed ? (
+            {canRenderStream ? (
                 <>
-                {isRealCamera ? (
-                  <>
-                    <img 
-                        src={streamSrc}
-                        className="w-full h-full object-cover transition-all duration-1000 opacity-60 group-hover:opacity-100 group-hover:scale-110"
-                        alt={camera.name}
-                        onError={() => {
-                          if (!triedVideoFallback) {
-                            const fallback = normalizeStreamUrl(camera.ip_simulated, true);
-                            if (fallback && fallback !== streamSrc) {
-                              setTriedVideoFallback(true);
-                              setStreamSrc(fallback);
-                              return;
-                            }
-                          }
-                          setStreamFailed(true);
-                          if (retryTimerRef.current) {
-                            window.clearTimeout(retryTimerRef.current);
-                          }
-                          retryTimerRef.current = window.setTimeout(() => {
-                            setStreamFailed(false);
-                            setStreamSrc((prev) => {
-                              const base = String(prev || '').split('?')[0];
-                              return `${base}?retry=${Date.now()}`;
-                            });
-                          }, 3000);
-                        }}
-                        onLoad={() => {
-                          setStreamFailed(false);
-                        }}
-                    />
-                    {streamFailed && resolvedStatus === 'online' && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-black/50">
-                        <span className="text-[10px] font-black text-white uppercase tracking-widest">Live feed reconnecting…</span>
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <div className="absolute inset-0 overflow-hidden">
-                    <div className="absolute inset-0 bg-gradient-to-tr from-cyan-600/20 via-blue-500/10 to-emerald-500/20 animate-pulse" />
-                    <div className="absolute inset-0 opacity-30" style={{ backgroundImage: 'repeating-linear-gradient(0deg, rgba(255,255,255,0.08) 0px, rgba(255,255,255,0.08) 1px, transparent 1px, transparent 4px)' }} />
-                    <div className="absolute bottom-4 left-4 text-[10px] text-emerald-300 font-mono uppercase tracking-widest">Mock stream active</div>
+                <img 
+                    src={streamSrc}
+                    className="w-full h-full object-cover transition-all duration-1000 opacity-60 group-hover:opacity-100 group-hover:scale-110"
+                    alt={camera.name}
+                    onError={() => {
+                      if (!triedVideoFallback) {
+                        const fallback = normalizeStreamUrl(camera.ip_simulated, true);
+                        if (fallback && fallback !== streamSrc) {
+                          setTriedVideoFallback(true);
+                          setStreamSrc(fallback);
+                          return;
+                        }
+                      }
+                      setStreamFailed(true);
+                      if (retryTimerRef.current) {
+                        window.clearTimeout(retryTimerRef.current);
+                      }
+                      retryTimerRef.current = window.setTimeout(() => {
+                        setStreamFailed(false);
+                        setStreamSrc((prev) => {
+                          const base = String(prev || '').split('?')[0];
+                          return `${base}?retry=${Date.now()}`;
+                        });
+                      }, 3000);
+                    }}
+                    onLoad={() => {
+                      setStreamFailed(false);
+                    }}
+                />
+                {streamFailed && resolvedStatus === 'online' && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                    <span className="text-[10px] font-black text-white uppercase tracking-widest">Live feed reconnecting…</span>
                   </div>
                 )}
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-all duration-500">

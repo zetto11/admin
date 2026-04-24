@@ -66,11 +66,8 @@ async function startServer() {
 
   setInterval(async () => {
     try {
-      const [cameras]: any = await db.execute("SELECT id, name, status FROM cameras");
+      const [cameras]: any = await db.execute("SELECT id, status FROM cameras");
       for (const cam of cameras) {
-        if (String(cam.name || "").toUpperCase() === "NODE_106") {
-          continue;
-        }
         if (Math.random() < 0.05) {
           const newStatus = cam.status === "online" ? "offline" : "online";
           await db.execute("UPDATE cameras SET status = ?, last_seen = CURRENT_TIMESTAMP WHERE id = ?", [newStatus, cam.id]);
@@ -230,6 +227,7 @@ async function startServer() {
         io.emit("camera_telemetry_update", {
           camera_id: cam.id,
           signal_percent: Math.round(state.signal),
+          uptime_seconds: Math.floor(state.uptimeSeconds),
           uptime_hhmmss: uptimeHHMMSS,
           uptime_hours: uptimeHours,
           thermal_celsius: Number(state.thermal.toFixed(2)),
