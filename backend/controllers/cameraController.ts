@@ -86,7 +86,7 @@ export const createCamera = async (req: AuthRequest, res: Response) => {
     }
 
     const [result]: any = await db.execute(
-      "INSERT INTO cameras (name, ip_simulated, zone, status, is_blocked) VALUES (?, ?, ?, 'offline', false)",
+      "INSERT INTO cameras (name, ip_simulated, zone, status, is_blocked) VALUES (?, ?, ?, 'online', false)",
       [name, ip_simulated, zoneMap[normalizedZone]]
     );
 
