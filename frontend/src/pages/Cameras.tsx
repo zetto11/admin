@@ -22,6 +22,15 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
+const normalizeStreamUrl = (url: string, forceVideo = false) => {
+  const trimmed = String(url || '').trim();
+  if (!trimmed) return '';
+  if (!forceVideo) return trimmed;
+  if (/\/video\/?$/i.test(trimmed)) return trimmed.replace(/\/+$/, '');
+  if (/^https?:\/\/[^/]+$/i.test(trimmed)) return `${trimmed}/video`;
+  return trimmed;
+};
+
 // Camera Feed Component
 const CameraFeed = ({
   camera,
@@ -45,6 +54,8 @@ const CameraFeed = ({
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [captureMessage, setCaptureMessage] = useState<string | null>(null);
   const [analysisMessage, setAnalysisMessage] = useState<string | null>(null);
+  const [streamSrc, setStreamSrc] = useState(normalizeStreamUrl(camera.ip_simulated));
+  const [triedVideoFallback, setTriedVideoFallback] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => setTimestamp(new Date().toLocaleTimeString()), 1000);
@@ -55,6 +66,8 @@ const CameraFeed = ({
 
   useEffect(() => {
     setStreamLive(false);
+    setStreamSrc(normalizeStreamUrl(camera.ip_simulated));
+    setTriedVideoFallback(false);
   }, [camera.id, camera.ip_simulated]);
 
   const handleCaptureFrame = async () => {
@@ -152,10 +165,18 @@ const CameraFeed = ({
           ) : (
             <>
                <img
-                 src={camera.ip_simulated}
+                 src={streamSrc}
                  className="w-full h-full object-cover"
                  alt={camera.name}
                  onError={() => {
+                   if (!triedVideoFallback) {
+                     const fallback = normalizeStreamUrl(camera.ip_simulated, true);
+                     if (fallback && fallback !== streamSrc) {
+                       setTriedVideoFallback(true);
+                       setStreamSrc(fallback);
+                       return;
+                     }
+                   }
                    setStreamLive(false);
                    onStreamError();
                  }}
@@ -304,10 +325,14 @@ function CameraCard({ camera, onClick, onBlock, isAdmin, viewMode, onStreamStatu
   const canRenderStream = !!camera.ip_simulated && !camera.is_blocked && !streamFailed;
   const resolvedStatus = streamLive && !camera.is_blocked ? 'online' : 'offline';
   const isListMode = viewMode === 'list';
+  const [streamSrc, setStreamSrc] = useState(normalizeStreamUrl(camera.ip_simulated));
+  const [triedVideoFallback, setTriedVideoFallback] = useState(false);
 
   useEffect(() => {
     setStreamFailed(false);
     setStreamLive(false);
+    setStreamSrc(normalizeStreamUrl(camera.ip_simulated));
+    setTriedVideoFallback(false);
   }, [camera.ip_simulated, camera.status, camera.is_blocked]);
 
   return (
@@ -331,10 +356,18 @@ function CameraCard({ camera, onClick, onBlock, isAdmin, viewMode, onStreamStatu
             {canRenderStream ? (
                 <>
                 <img 
-                    src={camera.ip_simulated}
+                    src={streamSrc}
                     className="w-full h-full object-cover transition-all duration-1000 opacity-60 group-hover:opacity-100 group-hover:scale-110"
                     alt={camera.name}
                     onError={() => {
+                      if (!triedVideoFallback) {
+                        const fallback = normalizeStreamUrl(camera.ip_simulated, true);
+                        if (fallback && fallback !== streamSrc) {
+                          setTriedVideoFallback(true);
+                          setStreamSrc(fallback);
+                          return;
+                        }
+                      }
                       setStreamFailed(true);
                       setStreamLive(false);
                       onStreamStatusChange('offline');
