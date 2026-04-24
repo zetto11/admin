@@ -130,6 +130,49 @@ export const blockCamera = (io: Server) => async (req: AuthRequest, res: Respons
   }
 };
 
+export const updateCamera = async (req: AuthRequest, res: Response) => {
+  const { id } = req.params;
+  const { name, ip_simulated, zone } = req.body || {};
+  if (!name || !ip_simulated || !zone) {
+    return res.status(400).json({ error: "name, ip_simulated and zone are required" });
+  }
+  if (!String(ip_simulated).toLowerCase().startsWith("http")) {
+    return res.status(400).json({ error: "ip_simulated must start with http" });
+  }
+
+  const normalizedZone = String(zone).trim().toLowerCase();
+  const zoneMap: Record<string, "Gate" | "Factory" | "Warehouse" | "Office"> = {
+    gate: "Gate",
+    factory: "Factory",
+    warehouse: "Warehouse",
+    office: "Office",
+    "auto-detected": "Gate",
+  };
+  if (!zoneMap[normalizedZone]) {
+    return res.status(400).json({ error: "zone must be one of: Gate, Factory, Warehouse, Office" });
+  }
+
+  try {
+    await db.execute(
+      "UPDATE cameras SET name = ?, ip_simulated = ?, zone = ? WHERE id = ?",
+      [name, ip_simulated, zoneMap[normalizedZone], id]
+    );
+    return res.json({ success: true });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+export const deleteCamera = async (req: AuthRequest, res: Response) => {
+  const { id } = req.params;
+  try {
+    await db.execute("DELETE FROM cameras WHERE id = ?", [id]);
+    return res.json({ success: true });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+};
+
 export const captureCameraFrame = async (req: AuthRequest, res: Response) => {
   const { id } = req.params;
   try {

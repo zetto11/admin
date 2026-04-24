@@ -18,7 +18,9 @@ import {
   Wifi,
   X,
   Activity,
-  Maximize2
+  Maximize2,
+  Trash2,
+  Pencil
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -314,12 +316,14 @@ interface CameraCardProps {
   camera: Camera;
   onClick: () => void | Promise<void>;
   onBlock: () => void | Promise<void>;
+  onEdit: () => void | Promise<void>;
+  onDelete: () => void | Promise<void>;
   isAdmin: boolean;
   viewMode: 'grid' | 'list';
   onStreamStatusChange: (status: 'online' | 'offline') => void;
 }
 
-function CameraCard({ camera, onClick, onBlock, isAdmin, viewMode, onStreamStatusChange }: CameraCardProps) {
+function CameraCard({ camera, onClick, onBlock, onEdit, onDelete, isAdmin, viewMode, onStreamStatusChange }: CameraCardProps) {
   const [streamFailed, setStreamFailed] = useState(false);
   const [streamLive, setStreamLive] = useState(false);
   const canRenderStream = !!camera.ip_simulated && !camera.is_blocked && !streamFailed;
@@ -443,16 +447,30 @@ function CameraCard({ camera, onClick, onBlock, isAdmin, viewMode, onStreamStatu
 
                 <div className="flex items-center gap-2 pt-4 border-t border-white/5">
                     {isAdmin ? (
-                        <button 
-                            onClick={(e) => { e.stopPropagation(); onBlock(); }}
-                            className={`flex-1 btn-action ${
-                                camera.is_blocked 
-                                    ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20 hover:bg-emerald-500 hover:text-white' 
-                                    : 'bg-rose-500/10 text-rose-500 border-rose-500/20 hover:bg-rose-500 hover:text-white'
-                            }`}
-                        >
-                            {camera.is_blocked ? 'Sync Node' : 'Block Sink'}
-                        </button>
+                        <>
+                          <button 
+                              onClick={(e) => { e.stopPropagation(); onBlock(); }}
+                              className={`flex-1 btn-action ${
+                                  camera.is_blocked 
+                                      ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20 hover:bg-emerald-500 hover:text-white' 
+                                      : 'bg-rose-500/10 text-rose-500 border-rose-500/20 hover:bg-rose-500 hover:text-white'
+                              }`}
+                          >
+                              {camera.is_blocked ? 'Sync Node' : 'Block Sink'}
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); onEdit(); }}
+                            className="p-2.5 bg-amber-600/10 text-amber-500 border border-amber-500/20 hover:bg-amber-600 hover:text-white rounded-lg transition-all"
+                          >
+                            <Pencil size={14} />
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); onDelete(); }}
+                            className="p-2.5 bg-rose-600/10 text-rose-500 border border-rose-500/20 hover:bg-rose-600 hover:text-white rounded-lg transition-all"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </>
                     ) : (
                         <div className="flex-1 py-1 px-3 bg-white/[0.02] border border-white/5 rounded-lg flex items-center justify-center gap-2">
                              <Lock size={12} className="text-slate-700" />
@@ -633,6 +651,48 @@ export default function Cameras() {
     }
   };
 
+  const handleEditCamera = async (camera: Camera) => {
+    const confirmEdit = window.confirm(`Are you sure you want to modify ${camera.name}?`);
+    if (!confirmEdit) return;
+
+    const name = window.prompt('Camera name', camera.name)?.trim();
+    if (!name) return;
+    const ip = window.prompt('Camera stream URL (ip_simulated)', camera.ip_simulated)?.trim();
+    if (!ip || !ip.toLowerCase().startsWith('http')) return;
+    const zone = window.prompt('Camera zone (Gate, Factory, Warehouse, Office)', camera.zone)?.trim();
+    if (!zone) return;
+
+    try {
+      const res = await fetch(`/api/cameras/${camera.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ name, ip_simulated: ip, zone }),
+      });
+      if (!res.ok) return;
+      fetchCameras();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeleteCamera = async (camera: Camera) => {
+    const confirmDelete = window.confirm(`Are you sure you want to delete ${camera.name}?`);
+    if (!confirmDelete) return;
+    try {
+      const res = await fetch(`/api/cameras/${camera.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return;
+      fetchCameras();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const filteredCameras = cameras.filter(cam => {
     const normalizedSearch = search.toLowerCase().trim();
     const currentStatus = liveStatus[cam.id] || cam.status;
@@ -804,6 +864,8 @@ export default function Cameras() {
                   camera={camera}
                   isAdmin={user?.role === 'admin'}
                   viewMode={viewMode}
+                  onEdit={() => handleEditCamera(camera)}
+                  onDelete={() => handleDeleteCamera(camera)}
                   onStreamStatusChange={(status) => {
                     setLiveStatus(prev => ({ ...prev, [camera.id]: status }));
                   }}
