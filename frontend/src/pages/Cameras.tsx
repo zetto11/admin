@@ -83,11 +83,14 @@ const CameraFeed = ({
   }, [camera.id, camera.ip_simulated, camera.uptime_hours]);
 
   useEffect(() => {
+    if (camera.status !== 'online' && !streamLive) {
+      return;
+    }
     const timer = setInterval(() => {
       setUptimeSeconds(prev => prev + 1);
     }, 1000);
     return () => clearInterval(timer);
-  }, [camera.id]);
+  }, [camera.id, camera.status, streamLive]);
 
   const handleCaptureFrame = async () => {
     try {

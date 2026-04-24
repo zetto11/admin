@@ -16,7 +16,7 @@ const generateTelemetryByZone = (zone: string) => {
   const storageGb = randFloat(0.5, 20, 2);
   return {
     signal_percent: randInt(signalRange[0], signalRange[1]),
-    uptime_hours: Number((randInt(0, 100000) / 3600).toFixed(2)),
+    uptime_hours: 0,
     thermal_celsius: randFloat(thermalRange[0], thermalRange[1], 2),
     load_percent: randInt(10, 90),
     retain_days_remaining: randInt(7, 30),
