@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../App';
 import { Camera } from '../types';
 import { 
@@ -18,36 +18,112 @@ import {
   Wifi,
   X,
   Activity,
-  Maximize2
+  Maximize2,
+  Trash2,
+  Pencil
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
-// Camera Feed Simulation Component
-const CameraFeed = ({ camera, onClose }: { camera: Camera, onClose: () => void }) => {
+const normalizeStreamUrl = (url: string, forceVideo = false) => {
+  const trimmed = String(url || '').trim();
+  if (!trimmed) return '';
+  if (!forceVideo) return trimmed;
+  if (/\/video\/?$/i.test(trimmed)) return trimmed.replace(/\/+$/, '');
+  if (/^https?:\/\/[^/]+$/i.test(trimmed)) return `${trimmed}/video`;
+  return trimmed;
+};
+
+const formatUptimeHHMMSS = (totalSeconds: number) => {
+  const sec = Math.max(0, Math.floor(totalSeconds));
+  const hh = String(Math.floor(sec / 3600)).padStart(2, '0');
+  const mm = String(Math.floor((sec % 3600) / 60)).padStart(2, '0');
+  const ss = String(sec % 60).padStart(2, '0');
+  return `${hh}:${mm}:${ss}`;
+};
+
+// Camera Feed Component
+const CameraFeed = ({
+  camera,
+  onClose,
+  streamFailed,
+  onStreamError,
+  onStreamLoad,
+}: {
+  camera: Camera,
+  onClose: () => void,
+  streamFailed: boolean,
+  onStreamError: () => void,
+  onStreamLoad: () => void
+}) => {
+  const { token } = useAuth();
   const [timestamp, setTimestamp] = useState(new Date().toLocaleTimeString());
-  const [noise, setNoise] = useState(false);
-  const [imgUrl, setImgUrl] = useState(`https://images.unsplash.com/photo-${camera.id === 1 ? '1541888946425-d81bb19240f5' : camera.id === 2 ? '1517404215738-15263e9f9178' : '1506744038136-46273834b3fb'}?auto=format&fit=crop&w=1200&q=80`);
+  const [streamLive, setStreamLive] = useState(false);
+  const canRenderStream = !!camera.ip_simulated && !camera.is_blocked && !streamFailed;
+  const resolvedStatus = streamLive && !camera.is_blocked ? 'online' : 'offline';
+  const [isCapturing, setIsCapturing] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [captureMessage, setCaptureMessage] = useState<string | null>(null);
+  const [analysisMessage, setAnalysisMessage] = useState<string | null>(null);
+  const [streamSrc, setStreamSrc] = useState(normalizeStreamUrl(camera.ip_simulated));
+  const [triedVideoFallback, setTriedVideoFallback] = useState(false);
+  const uptimeSeconds = Math.max(
+    0,
+    Math.floor(
+      Number(
+        camera.uptime_seconds ??
+        ((camera.uptime_hours ?? 0) * 3600)
+      )
+    )
+  );
 
   useEffect(() => {
     const timer = setInterval(() => setTimestamp(new Date().toLocaleTimeString()), 1000);
-    const noiseTimer = setInterval(() => {
-      if (Math.random() > 0.9) {
-        setNoise(true);
-        setTimeout(() => setNoise(false), 200);
-      }
-    }, 2000);
-    
-    // Simulate image refresh by adding random param
-    const refreshTimer = setInterval(() => {
-        setImgUrl(prev => `${prev.split('&sig=')[0]}&sig=${Math.random()}`);
-    }, 15000);
-
     return () => {
        clearInterval(timer);
-       clearInterval(noiseTimer);
-       clearInterval(refreshTimer);
     };
   }, []);
+
+  useEffect(() => {
+    setStreamLive(false);
+    setStreamSrc(normalizeStreamUrl(camera.ip_simulated));
+    setTriedVideoFallback(false);
+  }, [camera.id, camera.ip_simulated]);
+
+  const handleCaptureFrame = async () => {
+    try {
+      setIsCapturing(true);
+      setCaptureMessage(null);
+      const res = await fetch(`/api/cameras/${camera.id}/capture`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Failed to capture frame');
+      setCaptureMessage(`Saved to cam_screens/${data.file_name}`);
+    } catch (err: any) {
+      setCaptureMessage(err.message || 'Failed to capture frame');
+    } finally {
+      setIsCapturing(false);
+    }
+  };
+
+  const handleVectorAnalysis = async () => {
+    try {
+      setIsAnalyzing(true);
+      setAnalysisMessage(null);
+      const res = await fetch(`/api/cameras/${camera.id}/vector-analysis`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Vector analysis failed');
+      setAnalysisMessage(`${String(data.severity).toUpperCase()} • Risk ${data.risk_score}: ${data.summary}`);
+    } catch (err: any) {
+      setAnalysisMessage(err.message || 'Vector analysis failed');
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
@@ -68,7 +144,7 @@ const CameraFeed = ({ camera, onClose }: { camera: Camera, onClose: () => void }
         {/* Top Header */}
         <div className="p-4 flex justify-between items-center bg-white/[0.03] border-b border-white/5 relative z-10">
           <div className="flex items-center gap-4">
-            <div className={`status-pulse ${camera.status === 'online' ? 'status-pulse-online' : 'status-pulse-offline'}`}></div>
+            <div className={`status-pulse ${resolvedStatus === 'online' ? 'status-pulse-online' : 'status-pulse-offline'}`}></div>
             <div>
               <h3 className="text-sm font-bold text-white uppercase tracking-tight leading-none">{camera.name}</h3>
               <p className="text-[10px] text-slate-500 font-mono mt-1.5 uppercase tracking-widest">Global Node Identifier: 0x{camera.id.toString(16).toUpperCase()}</p>
@@ -99,21 +175,34 @@ const CameraFeed = ({ camera, onClose }: { camera: Camera, onClose: () => void }
                  <button onClick={onClose} className="btn-action">Return to Hub</button>
               </div>
             </div>
-          ) : camera.status === 'offline' ? (
+          ) : !canRenderStream ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-brand-bg text-center z-20">
-              <ShieldAlert size={60} className="text-slate-800 mb-6 animate-pulse" />
-              <h2 className="text-xl font-black text-slate-600 mb-2 uppercase tracking-[0.3em]">Signal Timeout</h2>
-              <p className="text-slate-700 text-[10px] font-mono tracking-widest">REMOTE PORT {camera.ip_simulated}: ERROR_HEARTBEAT_FAIL</p>
+              <WifiOff size={60} className="text-slate-700 mb-6" />
+              <h2 className="text-xl font-black text-slate-500 mb-2 uppercase tracking-[0.3em]">No Signal</h2>
+              <p className="text-slate-600 text-[10px] font-mono tracking-widest">Camera offline or unreachable</p>
             </div>
           ) : (
             <>
-               <motion.img 
-                 key={imgUrl}
-                 initial={{ opacity: 0 }}
-                 animate={{ opacity: 1 }}
-                 src={imgUrl} 
-                 className={`w-full h-full object-cover transition-all duration-700 ${noise ? 'opacity-50 blur-[2px] grayscale' : 'opacity-100'}`}
-                 alt="Tactical Feed"
+               <img
+                 src={streamSrc}
+                 className="w-full h-full object-cover"
+                 alt={camera.name}
+                 onError={() => {
+                   if (!triedVideoFallback) {
+                     const fallback = normalizeStreamUrl(camera.ip_simulated, true);
+                     if (fallback && fallback !== streamSrc) {
+                       setTriedVideoFallback(true);
+                       setStreamSrc(fallback);
+                       return;
+                     }
+                   }
+                   setStreamLive(false);
+                   onStreamError();
+                 }}
+                 onLoad={() => {
+                   setStreamLive(true);
+                   onStreamLoad();
+                 }}
                />
                <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_50%_50%,transparent_50%,rgba(0,0,0,0.4)_100%)]" />
                <div className="absolute inset-0 pointer-events-none mix-blend-overlay opacity-20 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] bg-repeat" />
@@ -126,10 +215,28 @@ const CameraFeed = ({ camera, onClose }: { camera: Camera, onClose: () => void }
                       METRIC: 12.4 Mbps / 32ms LATENCY
                     </div>
                     <div className="flex gap-3">
-                        <button className="btn-action bg-white/5 border-white/10 hover:bg-white/10 text-white">Capture Frame</button>
-                        <button className="btn-action bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-600/20">Vector Analysis</button>
+                        <button
+                          onClick={handleCaptureFrame}
+                          disabled={isCapturing}
+                          className="btn-action bg-white/5 border-white/10 hover:bg-white/10 text-white disabled:opacity-50"
+                        >
+                          {isCapturing ? 'Capturing...' : 'Capture Frame'}
+                        </button>
+                        <button
+                          onClick={handleVectorAnalysis}
+                          disabled={isAnalyzing}
+                          className="btn-action bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-600/20 disabled:opacity-50"
+                        >
+                          {isAnalyzing ? 'Analyzing...' : 'Vector Analysis'}
+                        </button>
                     </div>
                 </div>
+                {(captureMessage || analysisMessage) && (
+                  <div className="mt-4 space-y-1">
+                    {captureMessage && <p className="text-[10px] text-emerald-400 font-mono">{captureMessage}</p>}
+                    {analysisMessage && <p className="text-[10px] text-blue-300 font-mono">{analysisMessage}</p>}
+                  </div>
+                )}
               </div>
             </>
           )}
@@ -141,7 +248,7 @@ const CameraFeed = ({ camera, onClose }: { camera: Camera, onClose: () => void }
           </div>
           
           {/* Overlay scanning line */}
-          {camera.status === 'online' && !camera.is_blocked && (
+          {canRenderStream && (
             <motion.div 
                animate={{ top: ['0%', '100%'] }}
                transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
@@ -151,8 +258,9 @@ const CameraFeed = ({ camera, onClose }: { camera: Camera, onClose: () => void }
 
           <div className="absolute top-6 left-6 p-3 glass-card bg-black/40 border-white/10 backdrop-blur-md">
              <div className="flex items-center gap-3">
-                <Radio size={14} className="text-rose-500 animate-pulse" />
-                <span className="text-[10px] font-mono font-black text-white tracking-[0.2em] uppercase">Tactical.View_{camera.id}</span>
+                <div className={`w-2.5 h-2.5 rounded-full ${resolvedStatus === 'online' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                <span className="text-[10px] font-mono font-black text-white tracking-[0.2em] uppercase">{camera.name} • {camera.zone}</span>
+                {resolvedStatus === 'online' && <span className="px-2 py-0.5 rounded bg-rose-500 text-white text-[8px] font-black tracking-widest">LIVE</span>}
              </div>
           </div>
         </div>
@@ -163,10 +271,10 @@ const CameraFeed = ({ camera, onClose }: { camera: Camera, onClose: () => void }
               <h4 className="text-[10px] font-black text-slate-600 uppercase tracking-[0.3em] mb-4">Node Telemetry</h4>
               <div className="grid grid-cols-2 gap-4">
                  {[
-                   { label: 'Signal', val: '98%', color: 'text-emerald-500' },
-                   { label: 'Uptime', val: '942h', color: 'text-blue-400' },
-                   { label: 'Thermal', val: '42°C', color: 'text-amber-500' },
-                   { label: 'Load', val: '12%', color: 'text-slate-400' }
+                   { label: 'Signal', val: camera.signal_percent != null ? `${camera.signal_percent}%` : 'N/A', color: 'text-emerald-500' },
+                   { label: 'Uptime', val: formatUptimeHHMMSS(uptimeSeconds), color: 'text-blue-400' },
+                   { label: 'Thermal', val: camera.thermal_celsius != null ? `${Number(camera.thermal_celsius).toFixed(1)}°C` : 'N/A', color: 'text-amber-500' },
+                   { label: 'Load', val: camera.load_percent != null ? `${camera.load_percent}%` : 'N/A', color: 'text-slate-400' }
                  ].map(i => (
                    <div key={i.label} className="p-3 rounded-xl bg-white/[0.02] border border-white/5">
                       <p className="text-[8px] font-bold text-slate-600 uppercase tracking-widest mb-1">{i.label}</p>
@@ -183,12 +291,22 @@ const CameraFeed = ({ camera, onClose }: { camera: Camera, onClose: () => void }
                        <Clock size={14} className="text-blue-500" />
                        <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">Retain Cycle</span>
                     </div>
-                    <span className="text-[9px] font-mono text-slate-500 uppercase">30 Days Remaining</span>
+                    <span className="text-[9px] font-mono text-slate-500 uppercase">
+                      {camera.retain_days_remaining != null ? `${camera.retain_days_remaining} Days Remaining` : 'N/A'}
+                    </span>
                  </div>
                  <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
-                    <motion.div initial={{ width: 0 }} animate={{ width: '75%' }} className="h-full bg-blue-500 shadow-[0_0_8px_#3b82f6]" />
+                    <motion.div
+                      initial={{ width: 0 }}
+                      animate={{ width: `${Math.max(0, Math.min(100, camera.retain_days_remaining != null ? (camera.retain_days_remaining / 30) * 100 : 0))}%` }}
+                      className="h-full bg-blue-500 shadow-[0_0_8px_#3b82f6]"
+                    />
                  </div>
-                 <p className="text-[9px] text-slate-600 font-medium leading-relaxed">Storage cluster node Sigma-4 identifying 4.2TB of proprietary vector data for this node.</p>
+                 <p className="text-[9px] text-slate-600 font-medium leading-relaxed">
+                   {camera.storage_node_label && camera.storage_used_tb != null
+                     ? `Storage cluster node ${camera.storage_node_label} identifying ${Number(camera.storage_used_tb).toFixed(2)}TB of proprietary vector data for this node.`
+                     : 'No storage telemetry available for this node yet.'}
+                 </p>
               </div>
            </div>
            <div className="space-y-4">
@@ -215,19 +333,93 @@ interface CameraCardProps {
   camera: Camera;
   onClick: () => void | Promise<void>;
   onBlock: () => void | Promise<void>;
+  onEdit: () => void | Promise<void>;
+  onDelete: () => void | Promise<void>;
   isAdmin: boolean;
+  viewMode: 'grid' | 'list';
 }
 
-function CameraCard({ camera, onClick, onBlock, isAdmin }: CameraCardProps) {
+function CameraCard({ camera, onClick, onBlock, onEdit, onDelete, isAdmin, viewMode }: CameraCardProps) {
+  const [streamFailed, setStreamFailed] = useState(false);
+  const showOnlineFeed = !camera.is_blocked && camera.status === 'online';
+  const canRenderStream = !!camera.ip_simulated && showOnlineFeed;
+  const retryTimerRef = useRef<number | null>(null);
+  const backendStatus: 'online' | 'offline' = camera.status === 'online' && !camera.is_blocked ? 'online' : 'offline';
+  const resolvedStatus = backendStatus;
+  const statusLabel = resolvedStatus === 'online' ? 'Online' : 'Offline';
+  const isListMode = viewMode === 'list';
+  const [streamSrc, setStreamSrc] = useState(normalizeStreamUrl(camera.ip_simulated));
+  const [triedVideoFallback, setTriedVideoFallback] = useState(false);
+  const uptimeSeconds = Math.max(0, Number(camera.uptime_seconds ?? ((camera.uptime_hours ?? 0) * 3600)));
+  const previewSignal = Math.max(0, Math.min(100, Math.round(Number(camera.signal_percent ?? 0))));
+  const previewLoad = Math.max(0, Math.min(100, Math.round(Number(camera.load_percent ?? 0))));
+  const previewThermal = Number(Number(camera.thermal_celsius ?? 0).toFixed(1));
+
+  useEffect(() => {
+    setStreamFailed(false);
+    setStreamSrc(normalizeStreamUrl(camera.ip_simulated));
+    setTriedVideoFallback(false);
+    if (retryTimerRef.current) {
+      window.clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+  }, [camera.ip_simulated, camera.status, camera.is_blocked]);
+
+  useEffect(() => () => {
+    if (retryTimerRef.current) {
+      window.clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+  }, []);
+
   return (
     <motion.div
         whileHover={{ y: -4 }}
-        className={`glass-card glass-card-hover h-full overflow-hidden group flex flex-col relative ${camera.is_blocked ? 'border-rose-500/30 bg-rose-500/[0.02]' : ''}`}
+        className={`glass-card glass-card-hover overflow-hidden group relative ${isListMode ? 'w-full flex flex-row' : 'h-full flex flex-col'} ${camera.is_blocked ? 'border-rose-500/30 bg-rose-500/[0.02]' : ''}`}
     >
         {/* Status Badge */}
-        <div className="absolute top-4 left-4 z-10 flex items-center gap-2 px-2.5 py-1 rounded-lg bg-black/60 backdrop-blur-md border border-white/10">
-            <div className={`status-pulse ${camera.status === 'online' ? 'status-pulse-online' : 'status-pulse-offline'}`} />
-            <span className="text-[9px] font-black text-white uppercase tracking-[0.2em]">{camera.status}</span>
+        <div className="absolute top-4 left-4 z-10 flex items-center gap-2 px-2.5 py-1 rounded-lg bg-black/60 backdrop-blur-md border border-white/10 transition-all duration-300">
+            <div className={`w-2 h-2 rounded-full ${resolvedStatus === 'online' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+            <span className="text-[9px] font-black text-white uppercase tracking-[0.2em]">{statusLabel}</span>
+        </div>
+
+        <div className="pointer-events-none absolute left-4 right-4 top-14 z-20 opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-300 ease-out">
+          <div className="rounded-xl border border-white/15 bg-black/75 backdrop-blur-md p-3 shadow-2xl">
+            <div className="grid grid-cols-[88px_1fr] gap-3 items-center">
+              <div className="w-[88px] h-[56px] rounded-lg overflow-hidden border border-white/10 bg-black/50">
+                {canRenderStream ? (
+                  <img src={streamSrc} alt={`${camera.name} preview`} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-[9px] font-black tracking-widest text-slate-400 uppercase">
+                    No Feed
+                  </div>
+                )}
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-black tracking-widest uppercase text-white truncate">{camera.name}</p>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className={`w-2 h-2 rounded-full ${resolvedStatus === 'online' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                  <span className="text-[9px] uppercase tracking-wider text-slate-200 font-bold">{statusLabel}</span>
+                  <span className="text-[9px] text-slate-400">•</span>
+                  <span className="text-[9px] text-slate-300 font-mono">{formatUptimeHHMMSS(uptimeSeconds)}</span>
+                </div>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-2 mt-3 text-[9px]">
+              <div className="rounded bg-white/5 border border-white/10 px-2 py-1.5">
+                <p className="text-slate-400 uppercase tracking-wider">Signal</p>
+                <p className="text-emerald-400 font-bold mt-0.5">{previewSignal}%</p>
+              </div>
+              <div className="rounded bg-white/5 border border-white/10 px-2 py-1.5">
+                <p className="text-slate-400 uppercase tracking-wider">Load</p>
+                <p className="text-amber-400 font-bold mt-0.5">{previewLoad}%</p>
+              </div>
+              <div className="rounded bg-white/5 border border-white/10 px-2 py-1.5">
+                <p className="text-slate-400 uppercase tracking-wider">Thermal</p>
+                <p className="text-rose-400 font-bold mt-0.5">{previewThermal}°C</p>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Zone Badge */}
@@ -236,14 +428,43 @@ function CameraCard({ camera, onClick, onBlock, isAdmin }: CameraCardProps) {
         </div>
 
         {/* Media Preview */}
-        <div className="aspect-[16/10] bg-[#050507] relative cursor-pointer overflow-hidden border-b border-white/5" onClick={onClick}>
-            {camera.status === 'online' && !camera.is_blocked ? (
+        <div className={`${isListMode ? 'w-80 min-w-80 border-r border-white/5' : 'aspect-[16/10] border-b border-white/5'} bg-[#050507] relative cursor-pointer overflow-hidden`} onClick={onClick}>
+            {canRenderStream ? (
                 <>
                 <img 
-                    src={`https://images.unsplash.com/photo-${camera.id === 1 ? '1541888946425-d81bb19240f5' : camera.id === 2 ? '1517404215738-15263e9f9178' : '1506744038136-46273834b3fb'}?auto=format&fit=crop&w=600&q=50`} 
+                    src={streamSrc}
                     className="w-full h-full object-cover transition-all duration-1000 opacity-60 group-hover:opacity-100 group-hover:scale-110"
-                    alt="Tactical Preview"
+                    alt={camera.name}
+                    onError={() => {
+                      if (!triedVideoFallback) {
+                        const fallback = normalizeStreamUrl(camera.ip_simulated, true);
+                        if (fallback && fallback !== streamSrc) {
+                          setTriedVideoFallback(true);
+                          setStreamSrc(fallback);
+                          return;
+                        }
+                      }
+                      setStreamFailed(true);
+                      if (retryTimerRef.current) {
+                        window.clearTimeout(retryTimerRef.current);
+                      }
+                      retryTimerRef.current = window.setTimeout(() => {
+                        setStreamFailed(false);
+                        setStreamSrc((prev) => {
+                          const base = String(prev || '').split('?')[0];
+                          return `${base}?retry=${Date.now()}`;
+                        });
+                      }, 3000);
+                    }}
+                    onLoad={() => {
+                      setStreamFailed(false);
+                    }}
                 />
+                {streamFailed && resolvedStatus === 'online' && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                    <span className="text-[10px] font-black text-white uppercase tracking-widest">Live feed reconnecting…</span>
+                  </div>
+                )}
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-all duration-500">
                     <div className="absolute bottom-4 left-4">
                         <div className="flex items-center gap-2">
@@ -252,26 +473,34 @@ function CameraCard({ camera, onClick, onBlock, isAdmin }: CameraCardProps) {
                         </div>
                     </div>
                 </div>
+                {resolvedStatus === 'online' && (
+                  <div className="absolute top-4 right-4 px-2 py-1 rounded bg-rose-500 text-white text-[9px] font-black tracking-widest transition-opacity duration-300">
+                    LIVE
+                  </div>
+                )}
                 </>
             ) : (
                 <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
                     {camera.is_blocked ? (
                         <>
                         <Lock size={32} className="text-rose-500 mb-3 opacity-50" />
-                        <span className="text-[10px] font-black text-rose-500 uppercase tracking-widest">Restricted Pattern</span>
+                        <span className="text-[10px] font-black text-rose-500 uppercase tracking-widest">Blocked</span>
                         </>
                     ) : (
                         <>
                         <WifiOff size={32} className="text-slate-800 mb-3" />
-                        <span className="text-[10px] font-black text-slate-800 uppercase tracking-widest">Link Interrupted</span>
+                        <span className="text-[10px] font-black text-slate-800 uppercase tracking-widest">Camera offline</span>
                         </>
                     )}
                 </div>
             )}
+            <div className="absolute left-4 bottom-4 px-2.5 py-1 rounded bg-black/60 border border-white/10 text-[10px] text-white font-semibold">
+              {camera.name} • {camera.zone}
+            </div>
         </div>
 
         {/* Content */}
-        <div className="p-5 flex-grow flex flex-col">
+        <div className="p-5 flex-grow flex flex-col min-w-0">
             <div className="flex justify-between items-start mb-4">
                 <div className="min-w-0 flex-1 pr-4">
                     <h3 className="text-sm font-bold text-white uppercase tracking-tight truncate group-hover:text-blue-500 transition-colors">{camera.name}</h3>
@@ -303,16 +532,30 @@ function CameraCard({ camera, onClick, onBlock, isAdmin }: CameraCardProps) {
 
                 <div className="flex items-center gap-2 pt-4 border-t border-white/5">
                     {isAdmin ? (
-                        <button 
-                            onClick={(e) => { e.stopPropagation(); onBlock(); }}
-                            className={`flex-1 btn-action ${
-                                camera.is_blocked 
-                                    ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20 hover:bg-emerald-500 hover:text-white' 
-                                    : 'bg-rose-500/10 text-rose-500 border-rose-500/20 hover:bg-rose-500 hover:text-white'
-                            }`}
-                        >
-                            {camera.is_blocked ? 'Sync Node' : 'Block Sink'}
-                        </button>
+                        <>
+                          <button 
+                              onClick={(e) => { e.stopPropagation(); onBlock(); }}
+                              className={`flex-1 btn-action ${
+                                  camera.is_blocked 
+                                      ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20 hover:bg-emerald-500 hover:text-white' 
+                                      : 'bg-rose-500/10 text-rose-500 border-rose-500/20 hover:bg-rose-500 hover:text-white'
+                              }`}
+                          >
+                              {camera.is_blocked ? 'Sync Node' : 'Block Sink'}
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); onEdit(); }}
+                            className="p-2.5 bg-amber-600/10 text-amber-500 border border-amber-500/20 hover:bg-amber-600 hover:text-white rounded-lg transition-all"
+                          >
+                            <Pencil size={14} />
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); onDelete(); }}
+                            className="p-2.5 bg-rose-600/10 text-rose-500 border border-rose-500/20 hover:bg-rose-600 hover:text-white rounded-lg transition-all"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </>
                     ) : (
                         <div className="flex-1 py-1 px-3 bg-white/[0.02] border border-white/5 rounded-lg flex items-center justify-center gap-2">
                              <Lock size={12} className="text-slate-700" />
@@ -333,17 +576,73 @@ function CameraCard({ camera, onClick, onBlock, isAdmin }: CameraCardProps) {
 };
 
 export default function Cameras() {
-  const { token, user } = useAuth();
+  const { token, user, socket } = useAuth();
   const [cameras, setCameras] = useState<Camera[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [zoneFilter, setZoneFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [selectedCamera, setSelectedCamera] = useState<Camera | null>(null);
+  const [streamErrors, setStreamErrors] = useState<Record<number, boolean>>({});
+  const [showModal, setShowModal] = useState(false);
+  const [form, setForm] = useState({ name: '', ip_simulated: '', zone: 'Gate' });
+  const [createError, setCreateError] = useState('');
+  const [editCamera, setEditCamera] = useState<Camera | null>(null);
+  const [editForm, setEditForm] = useState({ name: '', ip_simulated: '', zone: 'Gate' });
+  const [editError, setEditError] = useState('');
+  const [deleteCameraTarget, setDeleteCameraTarget] = useState<Camera | null>(null);
+  const [deleteError, setDeleteError] = useState('');
+  const [detecting, setDetecting] = useState(false);
+  const [detectedCameras, setDetectedCameras] = useState<Array<{ name: string; ip_simulated: string; zone: string }>>([]);
+  const [scanMessage, setScanMessage] = useState('');
+  const [scanStats, setScanStats] = useState<{ scanned: number; found: number; duration_ms: number } | null>(null);
 
   useEffect(() => {
     fetchCameras();
   }, [token]);
+
+  useEffect(() => {
+    if (!socket) return;
+    const onTelemetry = (payload: any) => {
+      setCameras(prev =>
+        prev.map(cam =>
+          cam.id === payload.camera_id
+            ? {
+                ...cam,
+                signal_percent: payload.signal_percent,
+                uptime_seconds: payload.uptime_seconds,
+                uptime_hours: payload.uptime_hours,
+                thermal_celsius: payload.thermal_celsius,
+                load_percent: payload.load_percent,
+                storage_used_tb: payload.storage_used_tb,
+                retain_days_remaining: payload.retain_days_remaining,
+                status: payload.status === 'online' ? 'online' : 'offline',
+              }
+            : cam
+        )
+      );
+    };
+    const onCameraUpdate = (payload: any) => {
+      setCameras(prev =>
+        prev.map(cam =>
+          cam.id === payload.id
+            ? {
+                ...cam,
+                status: payload.status ? (payload.status === 'online' ? 'online' : 'offline') : cam.status,
+                is_blocked: typeof payload.is_blocked === 'boolean' ? payload.is_blocked : cam.is_blocked,
+              }
+            : cam
+        )
+      );
+    };
+    socket.on('camera_telemetry_update', onTelemetry);
+    socket.on('camera_update', onCameraUpdate);
+    return () => {
+      socket.off('camera_telemetry_update', onTelemetry);
+      socket.off('camera_update', onCameraUpdate);
+    };
+  }, [socket]);
 
   const fetchCameras = async () => {
     try {
@@ -389,10 +688,197 @@ export default function Cameras() {
     }
   };
 
+  const handleCreateCamera = async () => {
+    const name = form.name.trim();
+    const ip = form.ip_simulated.trim();
+    const zone = form.zone.trim();
+    if (!name || !ip || !zone) {
+      setCreateError('All fields are required.');
+      return;
+    }
+    if (!ip.toLowerCase().startsWith('http')) {
+      setCreateError('ip_simulated must start with http.');
+      return;
+    }
+
+    try {
+      setCreateError('');
+      const res = await fetch('/api/cameras', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          name,
+          ip_simulated: ip,
+          zone,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setCreateError(data?.error || 'Failed to add camera.');
+        return;
+      }
+      setShowModal(false);
+      setForm({ name: '', ip_simulated: '', zone: 'Gate' });
+      fetchCameras();
+    } catch (err) {
+      console.error(err);
+      setCreateError('Failed to add camera.');
+    }
+  };
+
+  const handleDetectCamera = async () => {
+    let ticker: ReturnType<typeof setInterval> | null = null;
+    try {
+      setDetecting(true);
+      setDetectedCameras([]);
+      setScanStats(null);
+      const messages = [
+        'Scanning network...',
+        'Analyzing network topology...',
+        'Detecting live video streams...',
+        'Identifying security nodes...',
+      ];
+      let idx = 0;
+      setScanMessage(messages[idx]);
+      ticker = setInterval(() => {
+        idx = (idx + 1) % messages.length;
+        setScanMessage(messages[idx]);
+      }, 700);
+
+      const res = await fetch('/api/cameras/discover', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setDetectedCameras([]);
+        return;
+      }
+      const detected = Array.isArray(data) ? data : Array.isArray(data?.cameras) ? data.cameras : [];
+      setDetectedCameras(detected);
+      if (!Array.isArray(data)) {
+        setScanStats({
+          scanned: Number(data?.scanned || 0),
+          found: Number(data?.found || detected.length),
+          duration_ms: Number(data?.duration_ms || 0),
+        });
+      } else {
+        setScanStats({ scanned: 0, found: detected.length, duration_ms: 0 });
+      }
+    } catch (err) {
+      console.error(err);
+      setDetectedCameras([]);
+      setScanStats(null);
+    } finally {
+      if (ticker) clearInterval(ticker);
+      setDetecting(false);
+    }
+  };
+
+  const addDetectedCamera = async (cam: { name: string; ip_simulated: string; zone: string }) => {
+    try {
+      const res = await fetch('/api/cameras', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          name: cam.name,
+          ip_simulated: cam.ip_simulated,
+          zone: cam.zone
+        })
+      });
+      if (!res.ok) return;
+      setDetectedCameras(prev => prev.filter(c => c.ip_simulated !== cam.ip_simulated));
+      await fetchCameras();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleEditCamera = async (camera: Camera) => {
+    setEditError('');
+    setEditCamera(camera);
+    setEditForm({
+      name: camera.name,
+      ip_simulated: camera.ip_simulated,
+      zone: camera.zone || 'Gate',
+    });
+  };
+
+  const handleDeleteCamera = async (camera: Camera) => {
+    setDeleteError('');
+    setDeleteCameraTarget(camera);
+  };
+
+  const submitEditCamera = async () => {
+    if (!editCamera) return;
+    const name = editForm.name.trim();
+    const ip = editForm.ip_simulated.trim();
+    const zone = editForm.zone.trim();
+    if (!name || !ip || !zone) {
+      setEditError('All fields are required.');
+      return;
+    }
+    if (!ip.toLowerCase().startsWith('http')) {
+      setEditError('ip_simulated must start with http.');
+      return;
+    }
+    try {
+      const res = await fetch(`/api/cameras/${editCamera.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ name, ip_simulated: ip, zone }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setEditError(data?.error || 'Failed to modify camera.');
+        return;
+      }
+      setEditCamera(null);
+      fetchCameras();
+    } catch (err) {
+      console.error(err);
+      setEditError('Failed to modify camera.');
+    }
+  };
+
+  const confirmDeleteCamera = async () => {
+    if (!deleteCameraTarget) return;
+    try {
+      const res = await fetch(`/api/cameras/${deleteCameraTarget.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setDeleteError(data?.error || 'Failed to delete camera.');
+        return;
+      }
+      setDeleteCameraTarget(null);
+      fetchCameras();
+    } catch (err) {
+      console.error(err);
+      setDeleteError('Failed to delete camera.');
+    }
+  };
+
   const filteredCameras = cameras.filter(cam => {
-    const matchesSearch = cam.name.toLowerCase().includes(search.toLowerCase()) || cam.ip_simulated.includes(search);
+    const normalizedSearch = search.toLowerCase().trim();
+    const currentStatus = cam.status === 'online' && !cam.is_blocked ? 'online' : 'offline';
+    const matchesSearch =
+      cam.name?.toLowerCase().includes(normalizedSearch) ||
+      cam.ip_simulated?.toLowerCase().includes(normalizedSearch);
     const matchesZone = zoneFilter === 'All' || cam.zone === zoneFilter;
-    const matchesStatus = statusFilter === 'All' || cam.status === statusFilter.toLowerCase();
+    const matchesStatus =
+      statusFilter === 'All' ||
+      currentStatus === statusFilter.toLowerCase();
     return matchesSearch && matchesZone && matchesStatus;
   });
 
@@ -413,12 +899,106 @@ export default function Cameras() {
         </div>
         <div className="flex gap-4">
            <div className="flex glass-card p-1 items-center bg-white/[0.02]">
-             <button className="p-2 bg-blue-600/20 text-blue-400 rounded-lg shadow-sm"><Grid size={16} /></button>
-             <button className="p-2 text-slate-600 hover:text-white transition-colors"><List size={16} /></button>
+             <button
+               onClick={() => setViewMode('grid')}
+               className={`p-2 rounded-lg shadow-sm transition-colors ${viewMode === 'grid' ? 'bg-blue-600/20 text-blue-400' : 'text-slate-600 hover:text-white'}`}
+             >
+               <Grid size={16} />
+             </button>
+             <button
+               onClick={() => setViewMode('list')}
+               className={`p-2 rounded-lg transition-colors ${viewMode === 'list' ? 'bg-blue-600/20 text-blue-400' : 'text-slate-600 hover:text-white'}`}
+             >
+               <List size={16} />
+             </button>
            </div>
-           <button className="btn-action bg-blue-600 text-white border-blue-500 shadow-lg shadow-blue-600/20 hover:bg-blue-500">Node Provisioning</button>
+           <button onClick={handleDetectCamera} disabled={detecting} className="btn-action">
+             {detecting ? 'Scanning network...' : 'Detect Camera'}
+           </button>
+           <button
+             onClick={() => {
+               setCreateError('');
+               setShowModal(true);
+             }}
+             className="btn-action bg-blue-600 text-white border-blue-500 shadow-lg shadow-blue-600/20 hover:bg-blue-500"
+           >
+             Node Provisioning
+           </button>
         </div>
       </header>
+
+      {showModal && (
+        <div className="fixed inset-0 z-[70] bg-black/70 flex items-center justify-center p-4">
+          <div className="glass-card w-full max-w-md p-6 space-y-4">
+            <h3 className="text-white font-bold text-lg">Add Camera</h3>
+            <input
+              value={form.name}
+              onChange={(e) => setForm(prev => ({ ...prev, name: e.target.value }))}
+              placeholder="name"
+              className="input-soc w-full"
+            />
+            <input
+              value={form.ip_simulated}
+              onChange={(e) => setForm(prev => ({ ...prev, ip_simulated: e.target.value }))}
+              placeholder="ip_simulated"
+              className="input-soc w-full"
+            />
+            <select
+              value={form.zone}
+              onChange={(e) => setForm(prev => ({ ...prev, zone: e.target.value }))}
+              className="input-soc w-full"
+            >
+              <option value="Gate">Gate</option>
+              <option value="Factory">Factory</option>
+              <option value="Warehouse">Warehouse</option>
+              <option value="Office">Office</option>
+            </select>
+            {createError && <p className="text-rose-400 text-xs">{createError}</p>}
+            <div className="flex gap-2 justify-end">
+              <button onClick={handleCreateCamera} className="btn-action bg-blue-600 text-white border-blue-500">Add Camera</button>
+              <button onClick={() => {
+                setShowModal(false);
+                setCreateError('');
+              }} className="btn-action">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editCamera && (
+        <div className="fixed inset-0 z-[70] bg-black/70 flex items-center justify-center p-4">
+          <div className="glass-card w-full max-w-md p-6 space-y-4">
+            <h3 className="text-white font-bold text-lg">Modify Camera</h3>
+            <input value={editForm.name} onChange={(e) => setEditForm(prev => ({ ...prev, name: e.target.value }))} className="input-soc w-full" />
+            <input value={editForm.ip_simulated} onChange={(e) => setEditForm(prev => ({ ...prev, ip_simulated: e.target.value }))} className="input-soc w-full" />
+            <select value={editForm.zone} onChange={(e) => setEditForm(prev => ({ ...prev, zone: e.target.value }))} className="input-soc w-full">
+              <option value="Gate">Gate</option>
+              <option value="Factory">Factory</option>
+              <option value="Warehouse">Warehouse</option>
+              <option value="Office">Office</option>
+            </select>
+            {editError && <p className="text-rose-400 text-xs">{editError}</p>}
+            <div className="flex gap-2 justify-end">
+              <button onClick={submitEditCamera} className="btn-action bg-amber-600 text-white border-amber-500">Save Changes</button>
+              <button onClick={() => { setEditCamera(null); setEditError(''); }} className="btn-action">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteCameraTarget && (
+        <div className="fixed inset-0 z-[70] bg-black/70 flex items-center justify-center p-4">
+          <div className="glass-card w-full max-w-md p-6 space-y-4">
+            <h3 className="text-white font-bold text-lg">Are you sure you want to delete this camera?</h3>
+            <p className="text-xs text-slate-400">{deleteCameraTarget.name} • {deleteCameraTarget.ip_simulated}</p>
+            {deleteError && <p className="text-rose-400 text-xs">{deleteError}</p>}
+            <div className="flex gap-2 justify-end">
+              <button onClick={confirmDeleteCamera} className="btn-action bg-rose-600 text-white border-rose-500">Yes, Delete</button>
+              <button onClick={() => { setDeleteCameraTarget(null); setDeleteError(''); }} className="btn-action">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Advanced Filter Interface */}
       <div className="glass-card p-2 bg-white/[0.02] border-white/5">
@@ -479,19 +1059,52 @@ export default function Cameras() {
       </div>
 
       {/* Node Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-6 relative">
+      <div className={`${viewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-6' : 'flex flex-col gap-4'} relative`}>
         <AnimatePresence mode="popLayout">
           {filteredCameras.map((camera) => (
             <motion.div key={camera.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
               <CameraCard 
                   camera={camera}
                   isAdmin={user?.role === 'admin'}
+                  viewMode={viewMode}
+                  onEdit={() => handleEditCamera(camera)}
+                  onDelete={() => handleDeleteCamera(camera)}
                   onClick={() => handleView(camera)}
                   onBlock={() => toggleBlock(camera.id, camera.is_blocked)}
               />
             </motion.div>
           ))}
         </AnimatePresence>
+      </div>
+
+      <div className="glass-card p-4 bg-white/[0.02] border-white/5">
+        <h3 className="text-sm font-bold text-white mb-3">🟢 Discovered Network Nodes</h3>
+        {detecting && (
+          <p className="text-xs text-blue-400 font-mono animate-pulse">{scanMessage}</p>
+        )}
+        {!detecting && detectedCameras.length === 0 && (
+          <p className="text-xs text-slate-500">No active surveillance nodes detected</p>
+        )}
+        {scanStats && !detecting && (
+          <p className="text-[11px] text-slate-400 mb-2">
+            Scan complete • checked {scanStats.scanned} targets • found {scanStats.found} node(s)
+            {scanStats.duration_ms > 0 ? ` • ${scanStats.duration_ms}ms` : ''}
+          </p>
+        )}
+        <div className="space-y-3">
+          {detectedCameras.map((cam) => (
+            <div key={cam.ip_simulated} className="p-3 rounded-lg bg-white/[0.02] border border-white/5 flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-sm text-white font-semibold truncate">{cam.name}</p>
+                <p className="text-[11px] text-slate-400 font-mono truncate">{cam.ip_simulated}</p>
+                <span className="text-[10px] text-amber-400 font-bold">UNREGISTERED NODE</span>
+              </div>
+              <button onClick={() => addDetectedCamera(cam)} className="btn-action bg-blue-600 text-white border-blue-500">
+                ADD TO SYSTEM
+              </button>
+            </div>
+          ))}
+        </div>
       </div>
 
       {filteredCameras.length === 0 && (
@@ -507,7 +1120,10 @@ export default function Cameras() {
         {selectedCamera && (
           <CameraFeed 
             camera={(cameras.find(c => c.id === selectedCamera.id) || selectedCamera)} 
-            onClose={() => setSelectedCamera(null)} 
+            onClose={() => setSelectedCamera(null)}
+            streamFailed={!!streamErrors[selectedCamera.id]}
+            onStreamError={() => setStreamErrors(prev => ({ ...prev, [selectedCamera.id]: true }))}
+            onStreamLoad={() => setStreamErrors(prev => ({ ...prev, [selectedCamera.id]: false }))}
           />
         )}
       </AnimatePresence>
