@@ -337,16 +337,14 @@ interface CameraCardProps {
   onDelete: () => void | Promise<void>;
   isAdmin: boolean;
   viewMode: 'grid' | 'list';
-  onStreamStatusChange: (status: 'online' | 'offline') => void;
 }
 
-function CameraCard({ camera, onClick, onBlock, onEdit, onDelete, isAdmin, viewMode, onStreamStatusChange }: CameraCardProps) {
+function CameraCard({ camera, onClick, onBlock, onEdit, onDelete, isAdmin, viewMode }: CameraCardProps) {
   const [streamFailed, setStreamFailed] = useState(false);
-  const [streamLive, setStreamLive] = useState(false);
-  const canRenderStream = !!camera.ip_simulated && !camera.is_blocked && !streamFailed;
+  const canRenderStream = !!camera.ip_simulated && !camera.is_blocked;
   const retryTimerRef = useRef<number | null>(null);
   const backendStatus: 'online' | 'offline' = camera.status === 'online' && !camera.is_blocked ? 'online' : 'offline';
-  const resolvedStatus = !camera.is_blocked && (streamLive || backendStatus === 'online') ? 'online' : 'offline';
+  const resolvedStatus = backendStatus;
   const isListMode = viewMode === 'list';
   const [streamSrc, setStreamSrc] = useState(normalizeStreamUrl(camera.ip_simulated));
   const [triedVideoFallback, setTriedVideoFallback] = useState(false);
@@ -357,7 +355,6 @@ function CameraCard({ camera, onClick, onBlock, onEdit, onDelete, isAdmin, viewM
 
   useEffect(() => {
     setStreamFailed(false);
-    setStreamLive(false);
     setStreamSrc(normalizeStreamUrl(camera.ip_simulated));
     setTriedVideoFallback(false);
     if (retryTimerRef.current) {
@@ -446,8 +443,6 @@ function CameraCard({ camera, onClick, onBlock, onEdit, onDelete, isAdmin, viewM
                         }
                       }
                       setStreamFailed(true);
-                      setStreamLive(false);
-                      onStreamStatusChange('offline');
                       if (retryTimerRef.current) {
                         window.clearTimeout(retryTimerRef.current);
                       }
@@ -461,10 +456,13 @@ function CameraCard({ camera, onClick, onBlock, onEdit, onDelete, isAdmin, viewM
                     }}
                     onLoad={() => {
                       setStreamFailed(false);
-                      setStreamLive(true);
-                      onStreamStatusChange('online');
                     }}
                 />
+                {streamFailed && resolvedStatus === 'online' && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                    <span className="text-[10px] font-black text-white uppercase tracking-widest">Live feed reconnecting…</span>
+                  </div>
+                )}
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-all duration-500">
                     <div className="absolute bottom-4 left-4">
                         <div className="flex items-center gap-2">
@@ -487,7 +485,7 @@ function CameraCard({ camera, onClick, onBlock, onEdit, onDelete, isAdmin, viewM
                     ) : (
                         <>
                         <WifiOff size={32} className="text-slate-800 mb-3" />
-                        <span className="text-[10px] font-black text-slate-800 uppercase tracking-widest">Camera offline or unreachable</span>
+                        <span className="text-[10px] font-black text-slate-800 uppercase tracking-widest">Camera offline</span>
                         </>
                     )}
                 </div>
@@ -583,7 +581,6 @@ export default function Cameras() {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [selectedCamera, setSelectedCamera] = useState<Camera | null>(null);
   const [streamErrors, setStreamErrors] = useState<Record<number, boolean>>({});
-  const [liveStatus, setLiveStatus] = useState<Record<number, 'online' | 'offline'>>({});
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState({ name: '', ip_simulated: '', zone: 'Gate' });
   const [createError, setCreateError] = useState('');
@@ -855,7 +852,7 @@ export default function Cameras() {
 
   const filteredCameras = cameras.filter(cam => {
     const normalizedSearch = search.toLowerCase().trim();
-    const currentStatus = liveStatus[cam.id] || cam.status;
+    const currentStatus = cam.status === 'online' && !cam.is_blocked ? 'online' : 'offline';
     const matchesSearch =
       cam.name?.toLowerCase().includes(normalizedSearch) ||
       cam.ip_simulated?.toLowerCase().includes(normalizedSearch);
@@ -868,14 +865,6 @@ export default function Cameras() {
 
   const zones = ['All', ...Array.from(new Set(cameras.map(c => c.zone)))];
   const statuses = ['All', 'Online', 'Offline', 'Maintenance'];
-
-  useEffect(() => {
-    const initial: Record<number, 'online' | 'offline'> = {};
-    cameras.forEach(cam => {
-      initial[cam.id] = cam.status === 'online' ? 'online' : 'offline';
-    });
-    setLiveStatus(initial);
-  }, [cameras]);
 
   if (loading) return null;
 
@@ -1061,9 +1050,6 @@ export default function Cameras() {
                   viewMode={viewMode}
                   onEdit={() => handleEditCamera(camera)}
                   onDelete={() => handleDeleteCamera(camera)}
-                  onStreamStatusChange={(status) => {
-                    setLiveStatus(prev => ({ ...prev, [camera.id]: status }));
-                  }}
                   onClick={() => handleView(camera)}
                   onBlock={() => toggleBlock(camera.id, camera.is_blocked)}
               />
