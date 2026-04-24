@@ -283,13 +283,15 @@ interface CameraCardProps {
   onClick: () => void | Promise<void>;
   onBlock: () => void | Promise<void>;
   isAdmin: boolean;
+  viewMode: 'grid' | 'list';
 }
 
-function CameraCard({ camera, onClick, onBlock, isAdmin }: CameraCardProps) {
+function CameraCard({ camera, onClick, onBlock, isAdmin, viewMode }: CameraCardProps) {
   const [streamFailed, setStreamFailed] = useState(false);
   const [streamLive, setStreamLive] = useState(camera.status === 'online');
   const canRenderStream = !!camera.ip_simulated && !camera.is_blocked && !streamFailed;
   const resolvedStatus = streamLive && !camera.is_blocked ? 'online' : camera.status;
+  const isListMode = viewMode === 'list';
 
   useEffect(() => {
     setStreamFailed(false);
@@ -299,7 +301,7 @@ function CameraCard({ camera, onClick, onBlock, isAdmin }: CameraCardProps) {
   return (
     <motion.div
         whileHover={{ y: -4 }}
-        className={`glass-card glass-card-hover h-full overflow-hidden group flex flex-col relative ${camera.is_blocked ? 'border-rose-500/30 bg-rose-500/[0.02]' : ''}`}
+        className={`glass-card glass-card-hover overflow-hidden group relative ${isListMode ? 'w-full flex flex-row' : 'h-full flex flex-col'} ${camera.is_blocked ? 'border-rose-500/30 bg-rose-500/[0.02]' : ''}`}
     >
         {/* Status Badge */}
         <div className="absolute top-4 left-4 z-10 flex items-center gap-2 px-2.5 py-1 rounded-lg bg-black/60 backdrop-blur-md border border-white/10">
@@ -313,7 +315,7 @@ function CameraCard({ camera, onClick, onBlock, isAdmin }: CameraCardProps) {
         </div>
 
         {/* Media Preview */}
-        <div className="aspect-[16/10] bg-[#050507] relative cursor-pointer overflow-hidden border-b border-white/5" onClick={onClick}>
+        <div className={`${isListMode ? 'w-80 min-w-80 border-r border-white/5' : 'aspect-[16/10] border-b border-white/5'} bg-[#050507] relative cursor-pointer overflow-hidden`} onClick={onClick}>
             {canRenderStream ? (
                 <>
                 <img 
@@ -362,7 +364,7 @@ function CameraCard({ camera, onClick, onBlock, isAdmin }: CameraCardProps) {
         </div>
 
         {/* Content */}
-        <div className="p-5 flex-grow flex flex-col">
+        <div className="p-5 flex-grow flex flex-col min-w-0">
             <div className="flex justify-between items-start mb-4">
                 <div className="min-w-0 flex-1 pr-4">
                     <h3 className="text-sm font-bold text-white uppercase tracking-tight truncate group-hover:text-blue-500 transition-colors">{camera.name}</h3>
@@ -430,6 +432,7 @@ export default function Cameras() {
   const [search, setSearch] = useState('');
   const [zoneFilter, setZoneFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [selectedCamera, setSelectedCamera] = useState<Camera | null>(null);
   const [streamErrors, setStreamErrors] = useState<Record<number, boolean>>({});
 
@@ -508,8 +511,18 @@ export default function Cameras() {
         </div>
         <div className="flex gap-4">
            <div className="flex glass-card p-1 items-center bg-white/[0.02]">
-             <button className="p-2 bg-blue-600/20 text-blue-400 rounded-lg shadow-sm"><Grid size={16} /></button>
-             <button className="p-2 text-slate-600 hover:text-white transition-colors"><List size={16} /></button>
+             <button
+               onClick={() => setViewMode('grid')}
+               className={`p-2 rounded-lg shadow-sm transition-colors ${viewMode === 'grid' ? 'bg-blue-600/20 text-blue-400' : 'text-slate-600 hover:text-white'}`}
+             >
+               <Grid size={16} />
+             </button>
+             <button
+               onClick={() => setViewMode('list')}
+               className={`p-2 rounded-lg transition-colors ${viewMode === 'list' ? 'bg-blue-600/20 text-blue-400' : 'text-slate-600 hover:text-white'}`}
+             >
+               <List size={16} />
+             </button>
            </div>
            <button className="btn-action bg-blue-600 text-white border-blue-500 shadow-lg shadow-blue-600/20 hover:bg-blue-500">Node Provisioning</button>
         </div>
@@ -574,13 +587,14 @@ export default function Cameras() {
       </div>
 
       {/* Node Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-6 relative">
+      <div className={`${viewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-6' : 'flex flex-col gap-4'} relative`}>
         <AnimatePresence mode="popLayout">
           {filteredCameras.map((camera) => (
             <motion.div key={camera.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
               <CameraCard 
                   camera={camera}
                   isAdmin={user?.role === 'admin'}
+                  viewMode={viewMode}
                   onClick={() => handleView(camera)}
                   onBlock={() => toggleBlock(camera.id, camera.is_blocked)}
               />
