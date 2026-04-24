@@ -512,6 +512,7 @@ export default function Cameras() {
   const [detecting, setDetecting] = useState(false);
   const [detectedCameras, setDetectedCameras] = useState<Array<{ name: string; ip_simulated: string; zone: string }>>([]);
   const [scanMessage, setScanMessage] = useState('');
+  const [scanStats, setScanStats] = useState<{ scanned: number; found: number; duration_ms: number } | null>(null);
 
   useEffect(() => {
     fetchCameras();
@@ -607,6 +608,7 @@ export default function Cameras() {
     try {
       setDetecting(true);
       setDetectedCameras([]);
+      setScanStats(null);
       const messages = [
         'Scanning network...',
         'Analyzing network topology...',
@@ -630,9 +632,19 @@ export default function Cameras() {
       }
       const detected = Array.isArray(data) ? data : Array.isArray(data?.cameras) ? data.cameras : [];
       setDetectedCameras(detected);
+      if (!Array.isArray(data)) {
+        setScanStats({
+          scanned: Number(data?.scanned || 0),
+          found: Number(data?.found || detected.length),
+          duration_ms: Number(data?.duration_ms || 0),
+        });
+      } else {
+        setScanStats({ scanned: 0, found: detected.length, duration_ms: 0 });
+      }
     } catch (err) {
       console.error(err);
       setDetectedCameras([]);
+      setScanStats(null);
     } finally {
       if (ticker) clearInterval(ticker);
       setDetecting(false);
@@ -957,6 +969,12 @@ export default function Cameras() {
         )}
         {!detecting && detectedCameras.length === 0 && (
           <p className="text-xs text-slate-500">No active surveillance nodes detected</p>
+        )}
+        {scanStats && !detecting && (
+          <p className="text-[11px] text-slate-400 mb-2">
+            Scan complete • checked {scanStats.scanned} targets • found {scanStats.found} node(s)
+            {scanStats.duration_ms > 0 ? ` • ${scanStats.duration_ms}ms` : ''}
+          </p>
         )}
         <div className="space-y-3">
           {detectedCameras.map((cam) => (

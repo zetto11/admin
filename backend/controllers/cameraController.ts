@@ -76,6 +76,7 @@ export const createCamera = async (req: AuthRequest, res: Response) => {
 
 export const discoverCameras = async (_req: AuthRequest, res: Response) => {
   try {
+    const startedAt = Date.now();
     const [rows]: any = await db.execute("SELECT ip_simulated FROM cameras");
     const existingIps = new Set<string>();
     const subnetPrefixes = new Set<string>(["192.168.1", "192.168.11"]);
@@ -125,7 +126,13 @@ export const discoverCameras = async (_req: AuthRequest, res: Response) => {
     );
 
     const found = checks.filter(Boolean);
-    return res.json(found);
+    return res.json({
+      cameras: found,
+      scanned: candidates.length,
+      found: found.length,
+      duration_ms: Date.now() - startedAt,
+      subnets: Array.from(subnetPrefixes),
+    });
   } catch (err: any) {
     return res.status(500).json({ error: err.message });
   }
