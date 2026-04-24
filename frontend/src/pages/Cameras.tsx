@@ -341,10 +341,11 @@ interface CameraCardProps {
 
 function CameraCard({ camera, onClick, onBlock, onEdit, onDelete, isAdmin, viewMode }: CameraCardProps) {
   const [streamFailed, setStreamFailed] = useState(false);
-  const canRenderStream = !!camera.ip_simulated && !camera.is_blocked;
+  const canRenderStream = !!camera.ip_simulated && !camera.is_blocked && camera.status === 'online';
   const retryTimerRef = useRef<number | null>(null);
   const backendStatus: 'online' | 'offline' = camera.status === 'online' && !camera.is_blocked ? 'online' : 'offline';
   const resolvedStatus = backendStatus;
+  const statusLabel = resolvedStatus === 'online' ? 'Online' : 'Offline';
   const isListMode = viewMode === 'list';
   const [streamSrc, setStreamSrc] = useState(normalizeStreamUrl(camera.ip_simulated));
   const [triedVideoFallback, setTriedVideoFallback] = useState(false);
@@ -376,9 +377,9 @@ function CameraCard({ camera, onClick, onBlock, onEdit, onDelete, isAdmin, viewM
         className={`glass-card glass-card-hover overflow-hidden group relative ${isListMode ? 'w-full flex flex-row' : 'h-full flex flex-col'} ${camera.is_blocked ? 'border-rose-500/30 bg-rose-500/[0.02]' : ''}`}
     >
         {/* Status Badge */}
-        <div className="absolute top-4 left-4 z-10 flex items-center gap-2 px-2.5 py-1 rounded-lg bg-black/60 backdrop-blur-md border border-white/10">
+        <div className="absolute top-4 left-4 z-10 flex items-center gap-2 px-2.5 py-1 rounded-lg bg-black/60 backdrop-blur-md border border-white/10 transition-all duration-300">
             <div className={`w-2 h-2 rounded-full ${resolvedStatus === 'online' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
-            <span className="text-[9px] font-black text-white uppercase tracking-[0.2em]">{resolvedStatus}</span>
+            <span className="text-[9px] font-black text-white uppercase tracking-[0.2em]">{statusLabel}</span>
         </div>
 
         <div className="pointer-events-none absolute left-4 right-4 top-14 z-20 opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-300 ease-out">
@@ -397,7 +398,7 @@ function CameraCard({ camera, onClick, onBlock, onEdit, onDelete, isAdmin, viewM
                 <p className="text-[10px] font-black tracking-widest uppercase text-white truncate">{camera.name}</p>
                 <div className="flex items-center gap-2 mt-1">
                   <span className={`w-2 h-2 rounded-full ${resolvedStatus === 'online' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
-                  <span className="text-[9px] uppercase tracking-wider text-slate-200 font-bold">{resolvedStatus}</span>
+                  <span className="text-[9px] uppercase tracking-wider text-slate-200 font-bold">{statusLabel}</span>
                   <span className="text-[9px] text-slate-400">•</span>
                   <span className="text-[9px] text-slate-300 font-mono">{formatUptimeHHMMSS(uptimeSeconds)}</span>
                 </div>
@@ -471,9 +472,11 @@ function CameraCard({ camera, onClick, onBlock, onEdit, onDelete, isAdmin, viewM
                         </div>
                     </div>
                 </div>
-                <div className="absolute top-4 right-4 px-2 py-1 rounded bg-rose-500 text-white text-[9px] font-black tracking-widest">
-                  LIVE
-                </div>
+                {resolvedStatus === 'online' && (
+                  <div className="absolute top-4 right-4 px-2 py-1 rounded bg-rose-500 text-white text-[9px] font-black tracking-widest transition-opacity duration-300">
+                    LIVE
+                  </div>
+                )}
                 </>
             ) : (
                 <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
@@ -619,9 +622,24 @@ export default function Cameras() {
         )
       );
     };
+    const onCameraUpdate = (payload: any) => {
+      setCameras(prev =>
+        prev.map(cam =>
+          cam.id === payload.id
+            ? {
+                ...cam,
+                status: payload.status ? (payload.status === 'online' ? 'online' : 'offline') : cam.status,
+                is_blocked: typeof payload.is_blocked === 'boolean' ? payload.is_blocked : cam.is_blocked,
+              }
+            : cam
+        )
+      );
+    };
     socket.on('camera_telemetry_update', onTelemetry);
+    socket.on('camera_update', onCameraUpdate);
     return () => {
       socket.off('camera_telemetry_update', onTelemetry);
+      socket.off('camera_update', onCameraUpdate);
     };
   }, [socket]);
 
