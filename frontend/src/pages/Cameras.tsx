@@ -350,6 +350,10 @@ function CameraCard({ camera, onClick, onBlock, onEdit, onDelete, isAdmin, viewM
   const isListMode = viewMode === 'list';
   const [streamSrc, setStreamSrc] = useState(normalizeStreamUrl(camera.ip_simulated));
   const [triedVideoFallback, setTriedVideoFallback] = useState(false);
+  const uptimeSeconds = Math.max(0, Number(camera.uptime_seconds ?? ((camera.uptime_hours ?? 0) * 3600)));
+  const previewSignal = Math.max(0, Math.min(100, Math.round(Number(camera.signal_percent ?? 0))));
+  const previewLoad = Math.max(0, Math.min(100, Math.round(Number(camera.load_percent ?? 0))));
+  const previewThermal = Number(Number(camera.thermal_celsius ?? 0).toFixed(1));
 
   useEffect(() => {
     setStreamFailed(false);
@@ -378,6 +382,45 @@ function CameraCard({ camera, onClick, onBlock, onEdit, onDelete, isAdmin, viewM
         <div className="absolute top-4 left-4 z-10 flex items-center gap-2 px-2.5 py-1 rounded-lg bg-black/60 backdrop-blur-md border border-white/10">
             <div className={`w-2 h-2 rounded-full ${resolvedStatus === 'online' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
             <span className="text-[9px] font-black text-white uppercase tracking-[0.2em]">{resolvedStatus}</span>
+        </div>
+
+        <div className="pointer-events-none absolute left-4 right-4 top-14 z-20 opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-300 ease-out">
+          <div className="rounded-xl border border-white/15 bg-black/75 backdrop-blur-md p-3 shadow-2xl">
+            <div className="grid grid-cols-[88px_1fr] gap-3 items-center">
+              <div className="w-[88px] h-[56px] rounded-lg overflow-hidden border border-white/10 bg-black/50">
+                {canRenderStream ? (
+                  <img src={streamSrc} alt={`${camera.name} preview`} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-[9px] font-black tracking-widest text-slate-400 uppercase">
+                    No Feed
+                  </div>
+                )}
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-black tracking-widest uppercase text-white truncate">{camera.name}</p>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className={`w-2 h-2 rounded-full ${resolvedStatus === 'online' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                  <span className="text-[9px] uppercase tracking-wider text-slate-200 font-bold">{resolvedStatus}</span>
+                  <span className="text-[9px] text-slate-400">•</span>
+                  <span className="text-[9px] text-slate-300 font-mono">{formatUptimeHHMMSS(uptimeSeconds)}</span>
+                </div>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-2 mt-3 text-[9px]">
+              <div className="rounded bg-white/5 border border-white/10 px-2 py-1.5">
+                <p className="text-slate-400 uppercase tracking-wider">Signal</p>
+                <p className="text-emerald-400 font-bold mt-0.5">{previewSignal}%</p>
+              </div>
+              <div className="rounded bg-white/5 border border-white/10 px-2 py-1.5">
+                <p className="text-slate-400 uppercase tracking-wider">Load</p>
+                <p className="text-amber-400 font-bold mt-0.5">{previewLoad}%</p>
+              </div>
+              <div className="rounded bg-white/5 border border-white/10 px-2 py-1.5">
+                <p className="text-slate-400 uppercase tracking-wider">Thermal</p>
+                <p className="text-rose-400 font-bold mt-0.5">{previewThermal}°C</p>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Zone Badge */}
