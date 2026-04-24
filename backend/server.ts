@@ -88,6 +88,18 @@ async function startServer() {
     }
   }, 5000);
 
+  const telemetryState: Record<number, {
+    uptimeSeconds: number;
+    signal: number;
+    thermal: number;
+    load: number;
+    storageGb: number;
+    retainDays: number;
+    lastTickMs: number;
+  }> = {};
+
+  const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
+
   const runTelemetryCycle = async () => {
     try {
       const [rows]: any = await db.execute(
@@ -98,14 +110,45 @@ async function startServer() {
       );
 
       for (const cam of rows) {
+        if (!telemetryState[cam.id]) {
+          telemetryState[cam.id] = {
+            uptimeSeconds: Math.max(0, Number(cam.uptime_hours ?? 0) * 3600),
+            signal: clamp(Number(cam.signal_percent ?? randInt(60, 100)), 0, 100),
+            thermal: clamp(Number(cam.thermal_celsius ?? randFloat(35, 65, 2)), 30, 90),
+            load: clamp(Number(cam.load_percent ?? randInt(10, 80)), 0, 100),
+            storageGb: Math.max(0.5, Number(cam.storage_used_tb ?? 0.0005) * 1024),
+            retainDays: Math.max(0, Number(cam.retain_days_remaining ?? randInt(7, 30))),
+            lastTickMs: Date.now(),
+          };
+        }
+
+        const state = telemetryState[cam.id];
+        const nowMs = Date.now();
+        const elapsedSec = Math.max(1, (nowMs - state.lastTickMs) / 1000);
+        state.lastTickMs = nowMs;
+
         const zoneKey = String(cam.zone || "").toLowerCase();
-        const signalRange = zoneKey === "factory" ? [60, 88] : zoneKey === "warehouse" ? [65, 92] : [72, 100];
-        const thermalRange = zoneKey === "factory" ? [50, 80] : [35, 65];
-        const currentUptime = Number(cam.uptime_hours ?? 0);
-        const uptimeHours = cam.status === "online"
-          ? Number((currentUptime + randFloat(0.003, 0.008, 3)).toFixed(3))
-          : 0;
-        const nextStorage = Math.min(0.02, Math.max(0.0005, Number(cam.storage_used_tb ?? 0.0005) + randFloat(0.00001, 0.0003, 5)));
+        const zoneThermalBias = zoneKey === "factory" ? 12 : zoneKey === "warehouse" ? 6 : 2;
+
+        if (cam.status === "online") {
+          state.uptimeSeconds += elapsedSec;
+        } else {
+          state.uptimeSeconds = 0;
+        }
+
+        state.signal = clamp(state.signal + randInt(-5, 5), 0, 100);
+        state.load = clamp(state.load + randInt(-10, 10), 0, 100);
+
+        const targetThermal = clamp(30 + zoneThermalBias + state.load * 0.45, 30, 90);
+        const thermalDelta = clamp(targetThermal - state.thermal, -1.5, 1.5);
+        state.thermal = clamp(state.thermal + thermalDelta + randFloat(-0.3, 0.3, 2), 30, 90);
+
+        state.storageGb = Math.min(20, state.storageGb + (elapsedSec * 0.0015) + (state.load * 0.0002));
+        state.retainDays = Math.max(0, state.retainDays - (elapsedSec / 86400));
+
+        const uptimeHours = Number((state.uptimeSeconds / 3600).toFixed(3));
+        const storageTb = Number((state.storageGb / 1024).toFixed(4));
+        const retainDays = Math.max(0, Math.floor(state.retainDays));
 
         await db.execute(
           `INSERT INTO camera_telemetry
@@ -122,12 +165,12 @@ async function startServer() {
             updated_at = CURRENT_TIMESTAMP`,
           [
             cam.id,
-            randInt(signalRange[0], signalRange[1]),
+            Math.round(state.signal),
             uptimeHours,
-            randFloat(thermalRange[0], thermalRange[1], 2),
-            randInt(10, 90),
-            Math.max(7, Number(cam.retain_days_remaining ?? randInt(7, 30)) - (Math.random() > 0.95 ? 1 : 0)),
-            Number(nextStorage.toFixed(4)),
+            Number(state.thermal.toFixed(2)),
+            Math.round(state.load),
+            retainDays,
+            storageTb,
             cam.storage_node_label || `Sigma-${randInt(1, 9)}`,
           ]
         );
@@ -135,12 +178,12 @@ async function startServer() {
     } catch {
       // keep telemetry simulation fault-tolerant
     } finally {
-      const nextMs = randInt(10000, 30000);
+      const nextMs = randInt(1000, 5000);
       setTimeout(runTelemetryCycle, nextMs);
     }
   };
 
-  setTimeout(runTelemetryCycle, randInt(10000, 30000));
+  setTimeout(runTelemetryCycle, randInt(1000, 5000));
 
   const PORT = Number(process.env.PORT || 3000);
   httpServer.listen(PORT, "0.0.0.0", () => {
