@@ -482,7 +482,10 @@ export default function Cameras() {
   };
 
   const filteredCameras = cameras.filter(cam => {
-    const matchesSearch = cam.name.toLowerCase().includes(search.toLowerCase()) || cam.ip_simulated.includes(search);
+    const normalizedSearch = search.toLowerCase().trim();
+    const matchesSearch =
+      cam.name?.toLowerCase().includes(normalizedSearch) ||
+      cam.ip_simulated?.toLowerCase().includes(normalizedSearch);
     const matchesZone = zoneFilter === 'All' || cam.zone === zoneFilter;
     const matchesStatus = statusFilter === 'All' || cam.status === statusFilter.toLowerCase();
     return matchesSearch && matchesZone && matchesStatus;
