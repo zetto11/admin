@@ -5,6 +5,26 @@ import { Server } from "socket.io";
 import fs from "fs/promises";
 import path from "path";
 
+const randInt = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
+const randFloat = (min: number, max: number, decimals = 2) =>
+  Number((Math.random() * (max - min) + min).toFixed(decimals));
+
+const generateTelemetryByZone = (zone: string) => {
+  const zoneKey = String(zone || "").toLowerCase();
+  const signalRange = zoneKey === "factory" ? [60, 88] : zoneKey === "warehouse" ? [65, 92] : [72, 100];
+  const thermalRange = zoneKey === "factory" ? [50, 80] : [35, 65];
+  const storageGb = randFloat(0.5, 20, 2);
+  return {
+    signal_percent: randInt(signalRange[0], signalRange[1]),
+    uptime_hours: Number((randInt(0, 100000) / 3600).toFixed(2)),
+    thermal_celsius: randFloat(thermalRange[0], thermalRange[1], 2),
+    load_percent: randInt(10, 90),
+    retain_days_remaining: randInt(7, 30),
+    storage_used_tb: Number((storageGb / 1024).toFixed(4)),
+    storage_node_label: `Sigma-${randInt(1, 9)}`,
+  };
+};
+
 export const getCameras = async (req: AuthRequest, res: Response) => {
   try {
     const [rows] = await db.execute(
@@ -68,6 +88,24 @@ export const createCamera = async (req: AuthRequest, res: Response) => {
       "INSERT INTO cameras (name, ip_simulated, zone, status, is_blocked) VALUES (?, ?, ?, 'offline', false)",
       [name, ip_simulated, zoneMap[normalizedZone]]
     );
+
+    const telemetry = generateTelemetryByZone(zoneMap[normalizedZone]);
+    await db.execute(
+      `INSERT INTO camera_telemetry
+      (camera_id, signal_percent, uptime_hours, thermal_celsius, load_percent, retain_days_remaining, storage_used_tb, storage_node_label)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        result.insertId,
+        telemetry.signal_percent,
+        telemetry.uptime_hours,
+        telemetry.thermal_celsius,
+        telemetry.load_percent,
+        telemetry.retain_days_remaining,
+        telemetry.storage_used_tb,
+        telemetry.storage_node_label,
+      ]
+    );
+
     return res.status(201).json({ success: true, id: result.insertId });
   } catch (err: any) {
     return res.status(500).json({ error: err.message });

@@ -16,6 +16,10 @@ import { getSystemStatus, getAccessPoints, getUsers } from "./controllers/system
 
 dotenv.config();
 
+const randInt = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
+const randFloat = (min: number, max: number, decimals = 2) =>
+  Number((Math.random() * (max - min) + min).toFixed(decimals));
+
 async function startServer() {
   const isDbConnected = await connectToDatabase().catch((err) => {
     console.error("Database connection failed during startup:", err.message);
@@ -83,6 +87,60 @@ async function startServer() {
       // keep simulation fault-tolerant
     }
   }, 5000);
+
+  const runTelemetryCycle = async () => {
+    try {
+      const [rows]: any = await db.execute(
+        `SELECT c.id, c.zone, c.status, ct.uptime_hours, ct.signal_percent, ct.thermal_celsius, ct.load_percent,
+                ct.retain_days_remaining, ct.storage_used_tb, ct.storage_node_label
+         FROM cameras c
+         LEFT JOIN camera_telemetry ct ON ct.camera_id = c.id`
+      );
+
+      for (const cam of rows) {
+        const zoneKey = String(cam.zone || "").toLowerCase();
+        const signalRange = zoneKey === "factory" ? [60, 88] : zoneKey === "warehouse" ? [65, 92] : [72, 100];
+        const thermalRange = zoneKey === "factory" ? [50, 80] : [35, 65];
+        const currentUptime = Number(cam.uptime_hours ?? 0);
+        const uptimeHours = cam.status === "online"
+          ? Number((currentUptime + randFloat(0.003, 0.008, 3)).toFixed(3))
+          : 0;
+        const nextStorage = Math.min(0.02, Math.max(0.0005, Number(cam.storage_used_tb ?? 0.0005) + randFloat(0.00001, 0.0003, 5)));
+
+        await db.execute(
+          `INSERT INTO camera_telemetry
+          (camera_id, signal_percent, uptime_hours, thermal_celsius, load_percent, retain_days_remaining, storage_used_tb, storage_node_label)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+            signal_percent = VALUES(signal_percent),
+            uptime_hours = VALUES(uptime_hours),
+            thermal_celsius = VALUES(thermal_celsius),
+            load_percent = VALUES(load_percent),
+            retain_days_remaining = VALUES(retain_days_remaining),
+            storage_used_tb = VALUES(storage_used_tb),
+            storage_node_label = VALUES(storage_node_label),
+            updated_at = CURRENT_TIMESTAMP`,
+          [
+            cam.id,
+            randInt(signalRange[0], signalRange[1]),
+            uptimeHours,
+            randFloat(thermalRange[0], thermalRange[1], 2),
+            randInt(10, 90),
+            Math.max(7, Number(cam.retain_days_remaining ?? randInt(7, 30)) - (Math.random() > 0.95 ? 1 : 0)),
+            Number(nextStorage.toFixed(4)),
+            cam.storage_node_label || `Sigma-${randInt(1, 9)}`,
+          ]
+        );
+      }
+    } catch {
+      // keep telemetry simulation fault-tolerant
+    } finally {
+      const nextMs = randInt(10000, 30000);
+      setTimeout(runTelemetryCycle, nextMs);
+    }
+  };
+
+  setTimeout(runTelemetryCycle, randInt(10000, 30000));
 
   const PORT = Number(process.env.PORT || 3000);
   httpServer.listen(PORT, "0.0.0.0", () => {
