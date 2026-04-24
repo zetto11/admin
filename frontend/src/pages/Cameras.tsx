@@ -608,7 +608,7 @@ export default function Cameras() {
       setDetecting(true);
       setDetectedCameras([]);
       const messages = [
-        'Scanning secure network nodes...',
+        'Scanning network...',
         'Analyzing network topology...',
         'Detecting live video streams...',
         'Identifying security nodes...',
@@ -624,7 +624,12 @@ export default function Cameras() {
         headers: { Authorization: `Bearer ${token}` }
       });
       const data = await res.json();
-      setDetectedCameras(Array.isArray(data) ? data : []);
+      if (!res.ok) {
+        setDetectedCameras([]);
+        return;
+      }
+      const detected = Array.isArray(data) ? data : Array.isArray(data?.cameras) ? data.cameras : [];
+      setDetectedCameras(detected);
     } catch (err) {
       console.error(err);
       setDetectedCameras([]);
@@ -650,7 +655,7 @@ export default function Cameras() {
       });
       if (!res.ok) return;
       setDetectedCameras(prev => prev.filter(c => c.ip_simulated !== cam.ip_simulated));
-      fetchCameras();
+      await fetchCameras();
     } catch (err) {
       console.error(err);
     }
@@ -778,7 +783,7 @@ export default function Cameras() {
              </button>
            </div>
            <button onClick={handleDetectCamera} disabled={detecting} className="btn-action">
-             {detecting ? 'Scanning secure network nodes...' : 'Detect Camera'}
+             {detecting ? 'Scanning network...' : 'Detect Camera'}
            </button>
            <button
              onClick={() => {

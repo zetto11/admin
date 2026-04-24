@@ -79,17 +79,24 @@ export const discoverCameras = async (_req: AuthRequest, res: Response) => {
     const [rows]: any = await db.execute("SELECT ip_simulated FROM cameras");
     const existingIps = new Set<string>();
     const subnetPrefixes = new Set<string>(["192.168.1", "192.168.11"]);
+    const candidateOctets = new Set<number>([2, 3, 4, 5, 10, 11, 20, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110]);
 
     for (const row of rows) {
       const value = String(row.ip_simulated || "");
       existingIps.add(value);
       const match = value.match(/https?:\/\/(\d+\.\d+\.\d+)\.(\d+)/i);
-      if (match) subnetPrefixes.add(match[1]);
+      if (match) {
+        subnetPrefixes.add(match[1]);
+        const octet = Number(match[2]);
+        for (let i = Math.max(2, octet - 5); i <= Math.min(254, octet + 5); i += 1) {
+          candidateOctets.add(i);
+        }
+      }
     }
 
     const candidates: string[] = [];
     subnetPrefixes.forEach((prefix) => {
-      for (let i = 100; i <= 110; i += 1) {
+      for (const i of candidateOctets) {
         candidates.push(`http://${prefix}.${i}:8080/video`);
       }
     });
@@ -98,7 +105,10 @@ export const discoverCameras = async (_req: AuthRequest, res: Response) => {
       candidates.map(async (url) => {
         if (existingIps.has(url)) return null;
         try {
-          const response = await fetch(url, { signal: AbortSignal.timeout(900) });
+          let response = await fetch(url, { method: "HEAD", signal: AbortSignal.timeout(700) });
+          if (response.status === 405 || response.status === 404) {
+            response = await fetch(url, { signal: AbortSignal.timeout(900) });
+          }
           if (response.status < 500) {
             const suffix = url.match(/(\d+):8080\/video$/)?.[1] || "X";
             return {
