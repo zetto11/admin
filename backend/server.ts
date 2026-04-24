@@ -19,6 +19,13 @@ dotenv.config();
 const randInt = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
 const randFloat = (min: number, max: number, decimals = 2) =>
   Number((Math.random() * (max - min) + min).toFixed(decimals));
+const formatHHMMSS = (totalSeconds: number) => {
+  const s = Math.max(0, Math.floor(totalSeconds));
+  const hh = String(Math.floor(s / 3600)).padStart(2, "0");
+  const mm = String(Math.floor((s % 3600) / 60)).padStart(2, "0");
+  const ss = String(s % 60).padStart(2, "0");
+  return `${hh}:${mm}:${ss}`;
+};
 
 async function startServer() {
   const isDbConnected = await connectToDatabase().catch((err) => {
@@ -96,6 +103,8 @@ async function startServer() {
     storageGb: number;
     retainDays: number;
     lastTickMs: number;
+    previousStatus: string;
+    lastRetentionAlertAt: number;
   }> = {};
 
   const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
@@ -119,6 +128,8 @@ async function startServer() {
             storageGb: Math.max(0.5, Number(cam.storage_used_tb ?? 0.0005) * 1024),
             retainDays: Math.max(0, Number(cam.retain_days_remaining ?? randInt(7, 30))),
             lastTickMs: Date.now(),
+            previousStatus: String(cam.status || "offline"),
+            lastRetentionAlertAt: 0,
           };
         }
 
@@ -129,15 +140,30 @@ async function startServer() {
 
         const zoneKey = String(cam.zone || "").toLowerCase();
         const zoneThermalBias = zoneKey === "factory" ? 12 : zoneKey === "warehouse" ? 6 : 2;
+        const currentStatus = String(cam.status || "offline");
 
-        if (cam.status === "online") {
+        if (state.previousStatus !== currentStatus && currentStatus === "online") {
+          state.uptimeSeconds = 0;
+          state.signal = randInt(60, 80);
+          state.thermal = randFloat(35, 45, 2);
+          state.load = randInt(10, 30);
+        }
+        state.previousStatus = currentStatus;
+
+        if (currentStatus === "online") {
           state.uptimeSeconds += elapsedSec;
         } else {
           state.uptimeSeconds = 0;
         }
 
-        state.signal = clamp(state.signal + randInt(-5, 5), 0, 100);
-        state.load = clamp(state.load + randInt(-10, 10), 0, 100);
+        if (currentStatus === "offline") {
+          state.signal = clamp(state.signal - randInt(10, 30), 0, 100);
+          state.load = clamp(state.load - randInt(2, 10), 0, 100);
+        } else {
+          state.signal = clamp(state.signal + randInt(-5, 5), 0, 100);
+          const activitySpike = Math.random() > 0.85 ? randInt(8, 20) : 0;
+          state.load = clamp(state.load + randInt(-10, 10) + activitySpike, 0, 100);
+        }
 
         const targetThermal = clamp(30 + zoneThermalBias + state.load * 0.45, 30, 90);
         const thermalDelta = clamp(targetThermal - state.thermal, -1.5, 1.5);
@@ -148,7 +174,8 @@ async function startServer() {
 
         const uptimeHours = Number((state.uptimeSeconds / 3600).toFixed(3));
         const storageTb = Number((state.storageGb / 1024).toFixed(4));
-        const retainDays = Math.max(0, Math.floor(state.retainDays));
+        const retainDays = Math.max(0, Number(state.retainDays.toFixed(3)));
+        const uptimeHHMMSS = formatHHMMSS(state.uptimeSeconds);
 
         await db.execute(
           `INSERT INTO camera_telemetry
@@ -169,11 +196,38 @@ async function startServer() {
             uptimeHours,
             Number(state.thermal.toFixed(2)),
             Math.round(state.load),
-            retainDays,
+            Math.floor(retainDays),
             storageTb,
             cam.storage_node_label || `Sigma-${randInt(1, 9)}`,
           ]
         );
+
+        if (retainDays < 5 && (Date.now() - state.lastRetentionAlertAt > 6 * 60 * 60 * 1000)) {
+          state.lastRetentionAlertAt = Date.now();
+          const [result]: any = await db.execute(
+            "INSERT INTO alerts (type, severity, description, camera_id) VALUES (?, ?, ?, ?)",
+            ["system", "medium", `Camera ${cam.id} retention low: ${retainDays.toFixed(2)} days remaining`, cam.id]
+          );
+          io.emit("new_alert", {
+            id: result.insertId,
+            type: "system",
+            severity: "medium",
+            description: `Camera ${cam.id} retention low: ${retainDays.toFixed(2)} days remaining`,
+            timestamp: new Date().toISOString(),
+            is_acknowledged: false
+          });
+        }
+
+        io.emit("camera_telemetry_update", {
+          camera_id: cam.id,
+          signal_percent: Math.round(state.signal),
+          uptime_hhmmss: uptimeHHMMSS,
+          uptime_hours: uptimeHours,
+          thermal_celsius: Number(state.thermal.toFixed(2)),
+          load_percent: Math.round(state.load),
+          storage_used_tb: storageTb,
+          retain_days_remaining: retainDays,
+        });
       }
     } catch {
       // keep telemetry simulation fault-tolerant
