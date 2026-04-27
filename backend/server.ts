@@ -21,6 +21,17 @@ async function startServer() {
     return false;
   });
 
+  if (isDbConnected) {
+    try {
+      await db.execute("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS explanation TEXT NULL");
+      await db.execute("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS affected_entity VARCHAR(150) NULL");
+      await db.execute("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS is_acknowledged BOOLEAN DEFAULT FALSE");
+      await db.execute("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS acknowledged_at TIMESTAMP NULL DEFAULT NULL");
+    } catch (err: any) {
+      console.error("Alert schema update skipped:", err.message);
+    }
+  }
+
   const app = express();
   const httpServer = createServer(app);
   const io = new Server(httpServer, {
