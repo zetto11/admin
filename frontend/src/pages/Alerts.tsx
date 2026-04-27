@@ -2,14 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../App';
 import { Alert } from '../types';
 import { 
-  AlertTriangle, 
   CheckCircle2, 
   ShieldAlert, 
   Clock, 
-  Filter,
   Search,
   ChevronRight,
-  MoreVertical,
   Activity,
   Info,
   X,
@@ -24,6 +21,9 @@ export default function Alerts() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'high' | 'medium' | 'low'>('all');
   const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null);
+  const [searchText, setSearchText] = useState('');
+  const [actionPending, setActionPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchAlerts();
@@ -50,11 +50,16 @@ export default function Alerts() {
 
   const fetchAlerts = async () => {
     try {
+      setError(null);
       const res = await fetch('/api/alerts', { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) {
+        throw new Error(`Failed to fetch alerts (${res.status})`);
+      }
       const data = await res.json();
       setAlerts(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error(err);
+      setError('Unable to load incidents from database.');
     } finally {
       setLoading(false);
     }
@@ -62,34 +67,87 @@ export default function Alerts() {
 
   const acknowledgeAlert = async (id: number) => {
     try {
+      setActionPending(true);
+      setError(null);
       const res = await fetch(`/api/alerts/${id}/acknowledge`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` }
       });
+      if (!res.ok) {
+        throw new Error(`Failed to acknowledge alert (${res.status})`);
+      }
       if (res.ok) {
         setAlerts(prev => prev.map(a => a.id === id ? { ...a, is_acknowledged: true } : a));
+        setSelectedAlert(prev => prev && prev.id === id ? { ...prev, is_acknowledged: true } : prev);
       }
     } catch (err) {
       console.error(err);
+      setError('Failed to acknowledge incident.');
+    } finally {
+      setActionPending(false);
     }
   };
 
   const acknowledgeAll = async () => {
     if (!window.confirm("Acknowledge all active alerts?")) return;
     try {
+      setActionPending(true);
+      setError(null);
       const res = await fetch('/api/alerts/acknowledge-all', {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` }
       });
+      if (!res.ok) {
+        throw new Error(`Failed to acknowledge all alerts (${res.status})`);
+      }
       if (res.ok) {
         setAlerts(prev => prev.map(a => ({ ...a, is_acknowledged: true })));
+        setSelectedAlert(prev => prev ? { ...prev, is_acknowledged: true } : prev);
       }
     } catch (err) {
       console.error(err);
+      setError('Failed to acknowledge all incidents.');
+    } finally {
+      setActionPending(false);
     }
   };
 
-  const filteredAlerts = alerts.filter(a => filter === 'all' || a.severity === filter);
+  const purgeAlerts = async () => {
+    const scope = window.confirm('Delete ALL incidents from database?\nPress Cancel to only purge acknowledged incidents.')
+      ? 'all'
+      : 'acknowledged';
+    if (!window.confirm(`Confirm purge scope: ${scope}`)) return;
+
+    try {
+      setActionPending(true);
+      setError(null);
+      const res = await fetch(`/api/alerts?scope=${scope}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) {
+        throw new Error(`Failed to purge alerts (${res.status})`);
+      }
+      await fetchAlerts();
+      setSelectedAlert(null);
+    } catch (err) {
+      console.error(err);
+      setError('Failed to purge incidents.');
+    } finally {
+      setActionPending(false);
+    }
+  };
+
+  const filteredAlerts = alerts.filter(a => {
+    const severityMatch = filter === 'all' || a.severity === filter;
+    if (!severityMatch) return false;
+    if (!searchText.trim()) return true;
+
+    const haystack = `${a.id} ${a.type} ${a.description} ${a.affected_entity || ''}`.toLowerCase();
+    return haystack.includes(searchText.trim().toLowerCase());
+  });
+
+  const buildStableCode = (alert: Alert) => `TX_${(alert.id * 7919).toString(36).toUpperCase()}`;
 
   if (loading) return null;
 
@@ -117,14 +175,20 @@ export default function Alerts() {
            {user?.role === 'admin' && alerts.some(a => !a.is_acknowledged) && (
               <button 
                 onClick={acknowledgeAll}
+                disabled={actionPending}
                 className="btn-action bg-emerald-500 border-emerald-500 text-white shadow-lg shadow-emerald-500/20 hover:bg-emerald-400"
               >
                 Clear All Logs
               </button>
            )}
-           <button className="btn-action">Purge Database</button>
+           {user?.role === 'admin' && (
+             <button onClick={purgeAlerts} disabled={actionPending} className="btn-action">
+               Purge Database
+             </button>
+           )}
         </div>
       </header>
+      {error && <p className="text-xs text-rose-500 font-semibold">{error}</p>}
 
       <div className="glass-card overflow-hidden bg-brand-bg/50 backdrop-blur-2xl">
         <div className="p-4 border-b border-white/5 flex flex-col lg:flex-row gap-6 items-center justify-between bg-white/[0.02]">
@@ -149,6 +213,8 @@ export default function Alerts() {
                 <input 
                   type="text" 
                   placeholder="FILTER BY INCIDENT HASH..." 
+                  value={searchText}
+                  onChange={(e) => setSearchText(e.target.value)}
                   className="input-soc w-full h-12 pl-12 bg-black/20 border-white/5 rounded-xl uppercase tracking-widest font-black text-[10px]"
                 />
              </div>
@@ -295,7 +361,7 @@ export default function Alerts() {
                     <p className="text-[10px] text-slate-500 uppercase font-mono font-bold tracking-[0.2em] flex items-center gap-3">
                        <span className="text-blue-500">VECTOR_{selectedAlert.id.toString().padStart(4, '0')}</span>
                        <span className="w-1 h-1 rounded-full bg-slate-800" />
-                       <span>HASH: {Math.random().toString(16).slice(2, 10).toUpperCase()}</span>
+                       <span>HASH: {buildStableCode(selectedAlert)}</span>
                     </p>
                   </div>
                 </div>
@@ -339,7 +405,7 @@ export default function Alerts() {
                        </div>
                        <div className="flex justify-between items-center py-2">
                           <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Event Chain ID</span>
-                          <span className="text-[11px] font-mono font-bold text-blue-500">TX_{Math.random().toString(36).slice(2, 8).toUpperCase()}</span>
+                          <span className="text-[11px] font-mono font-bold text-blue-500">{buildStableCode(selectedAlert)}</span>
                        </div>
                     </div>
                   </div>
@@ -392,6 +458,7 @@ export default function Alerts() {
                           acknowledgeAlert(selectedAlert.id);
                           setSelectedAlert(prev => prev ? { ...prev, is_acknowledged: true } : null);
                         }}
+                        disabled={actionPending}
                         className="px-12 py-5 bg-blue-600 text-white rounded-2xl text-[11px] font-black uppercase tracking-[0.2em] shadow-[0_20px_40px_rgba(37,99,235,0.2)] hover:shadow-[0_20px_60px_rgba(37,99,235,0.4)] transition-all flex items-center gap-4"
                       >
                         <ShieldCheck size={18} />
@@ -408,4 +475,3 @@ export default function Alerts() {
     </div>
   );
 }
-
